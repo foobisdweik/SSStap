@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using SSStap.PacketProcessing;
 using SSStap.Routing;
 
@@ -164,17 +165,56 @@ public sealed class TunnelEngine
         if (_udpRelay == null)
         {
             _udpRelay = await _socks5.OpenUdpAssociateAsync(ct);
+            _udpRelay.UdpSocket = new UdpClient();
+            _udpRelay.UdpSocket.Connect(_udpRelay.RelayEndPoint);
+            _ = ReceiveUdpFromRelayAsync(_udpRelay, ct);
         }
 
         // SOCKS5 UDP format: RSV(2) FRAG(1) ATYP(1) DST.ADDR(4) DST.PORT(2) DATA
+        var payload = packet.Slice(parsed.PayloadOffset, parsed.PayloadLength);
         var header = new byte[10];
         header[2] = 0; // FRAG
         header[3] = 1; // ATYP IPv4
         parsed.DestinationAddress.GetAddressBytes().CopyTo(header, 4);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(8), parsed.DestinationPort);
 
-        // TODO: use actual UDP socket to send to _udpRelay.RelayEndPoint
-        // For now, stub - requires UdpClient and receive loop for responses
+        var udpPacket = new byte[header.Length + payload.Length];
+        header.CopyTo(udpPacket, 0);
+        payload.CopyTo(udpPacket.AsMemory(header.Length));
+
+        await _udpRelay.UdpSocket!.SendAsync(udpPacket, ct);
+    }
+
+    private async Task ReceiveUdpFromRelayAsync(UdpRelayInfo relay, CancellationToken ct)
+    {
+        if (relay.UdpSocket == null) return;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var result = await relay.UdpSocket.ReceiveAsync(ct);
+                var data = result.Buffer;
+                // SOCKS5 UDP header: RSV(2) FRAG(1) ATYP(1) ADDR DST.PORT(2)
+                // IPv4 (ATYP=1): 4+4+2 = 10 bytes total
+                // IPv6 (ATYP=4): 4+16+2 = 22 bytes total
+                // Domain (ATYP=3): 4+1+len+2 bytes total
+                if (data.Length < 4) continue;
+                int headerLen = data[3] switch
+                {
+                    1 => 10,                    // IPv4
+                    4 => 22,                    // IPv6
+                    3 when data.Length > 4 => 7 + data[4], // Domain: RSV+FRAG+ATYP+LEN_BYTE+domain+PORT
+                    _ => 10
+                };
+                if (data.Length > headerLen)
+                    await _packetSource.SendAsync(data.AsMemory(headerLen), ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"UDP relay receive error: {ex.Message}");
+        }
     }
 
     private readonly record struct ConnectionKey(
@@ -185,14 +225,30 @@ public sealed class TunnelEngine
     {
         private Stream? _stream;
         private readonly object _lock = new();
+        private bool _disposed;
 
         public Stream? Stream => _stream;
 
         public void SetStream(Stream s)
         {
-            lock (_lock) { _stream = s; }
+            lock (_lock)
+            {
+                if (_disposed)
+                {
+                    s.Dispose();
+                    return;
+                }
+                _stream = s;
+            }
         }
 
-        public void Dispose() => _stream?.Dispose();
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                _disposed = true;
+                _stream?.Dispose();
+            }
+        }
     }
 }

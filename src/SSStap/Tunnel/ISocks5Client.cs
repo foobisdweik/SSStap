@@ -28,12 +28,15 @@ public interface ISocks5Client
     Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default);
 }
 
-/// <summary>Info returned from UDP ASSOCIATE. BindAddress is the 4-byte IP + 2-byte port for SOCKS5 UDP envelope. Dispose to close the TCP control connection.</summary>
+/// <summary>Info returned from UDP ASSOCIATE. BindAddress is the 4-byte IP + 2-byte port for SOCKS5 UDP envelope. Dispose to close the TCP control connection and UDP socket.</summary>
 public class UdpRelayInfo : IDisposable
 {
     public IPEndPoint RelayEndPoint { get; }
     public byte[] BindAddress { get; }
     internal TcpClient? ControlConnection { get; set; }
+
+    /// <summary>UDP socket used to send/receive datagrams to the SOCKS5 relay endpoint.</summary>
+    public UdpClient? UdpSocket { get; set; }
 
     public UdpRelayInfo(IPEndPoint relayEndPoint, byte[] bindAddress)
     {
@@ -41,5 +44,9 @@ public class UdpRelayInfo : IDisposable
         BindAddress = bindAddress;
     }
 
-    public void Dispose() => ControlConnection?.Dispose();
+    public void Dispose()
+    {
+        UdpSocket?.Dispose();
+        ControlConnection?.Dispose();
+    }
 }

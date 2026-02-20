@@ -90,4 +90,10 @@ public class ProxyConfig
     public int UdpOverTcp { get; set; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(Remarks) ? $"{Server}:{ServerPort}" : Remarks;
+
+    /// <summary>Returns true when the minimum required fields are populated with valid values.</summary>
+    public bool IsValid =>
+        !string.IsNullOrWhiteSpace(Server) &&
+        ServerPort >= 1 &&
+        ServerPort <= 65535;
 }

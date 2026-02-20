@@ -361,7 +361,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _testCts?.Cancel();
         _testCts?.Dispose();
-        _ = TearDownAsync();
+        // Run on the thread-pool to avoid a UI-thread deadlock when continuations
+        // inside TearDownAsync try to resume on the synchronization context.
+        Task.Run(TearDownAsync).GetAwaiter().GetResult();
     }
 }
 

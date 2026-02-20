@@ -241,7 +241,7 @@ public sealed class SimpleHttpProxyShim : IDisposable
     private static async Task RelayBidirectionalAsync(Stream a, Stream b, byte[] buffer, CancellationToken ct)
     {
         var t1 = RelayOneWayAsync(a, b, buffer, ct);
-        var t2 = RelayOneWayAsync(b, a, buffer, ct);
+        var t2 = RelayOneWayAsync(b, a, new byte[buffer.Length], ct);
         await Task.WhenAny(t1, t2).ConfigureAwait(false);
     }
 
