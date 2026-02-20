@@ -30,6 +30,7 @@ privoxy-log.log
 
 # Build output (contains copied DLLs, exe, etc.)
 # Place wintun.dll in bin/Debug/net8.0-windows/ for Connect to work
+dist/
 
 # OS
 Thumbs.db

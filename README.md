@@ -22,7 +22,16 @@ dotnet build
 dotnet run --project SSStap
 ```
 
-Place **wintun.dll** (amd64 from [wintun.net](https://www.wintun.net/)) in `src/SSStap/bin/Debug/net8.0-windows/` for Connect to work. Run as Administrator for full functionality.
+## Release installer
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+Produces `dist/SSStap-Setup-0.1.0.exe` (requires [Inno Setup 6](https://jrsoftware.org/isdl.php))  
+or `dist/SSStap-0.1.0-win-x64.zip` as fallback.
+
+**Debug:** Place wintun.dll in `bin/Debug/net8.0-windows/` for Connect. **Release/installer:** wintun.dll is bundled automatically. Run as Administrator for full functionality.
 
 ## Tests
 
