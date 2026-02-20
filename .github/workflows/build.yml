@@ -19,7 +19,13 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Install Inno Setup 6
-        run: winget install JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent
+        run: |
+          winget list --name "Inno Setup" | findstr "Inno Setup"
+          if ($LASTEXITCODE -ne 0) {
+            winget install JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent
+          }
+          exit 0
+        shell: pwsh
 
       - name: Restore
         run: dotnet restore src/SSStap.sln
