@@ -24,9 +24,9 @@ public static partial class Wintun
             if (libraryName != DllName)
                 return nint.Zero;
             var path = Path.Combine(AppContext.BaseDirectory, "wintun.dll");
-            return NativeLibrary.TryLoad(path, assembly, searchPath, out var handle)
-                ? handle
-                : nint.Zero;
+            var exists = File.Exists(path);
+            var loaded = NativeLibrary.TryLoad(path, assembly, searchPath, out var handle);
+            return loaded ? handle : nint.Zero;
         });
     }
 

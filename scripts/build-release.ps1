@@ -19,20 +19,18 @@ try {
     Pop-Location
 }
 
-# 2. Bundle wintun.dll (official signed build from wintun.net)
+# 2. Bundle wintun.dll (official signed build from wintun.net) - always refresh to avoid stale 0.12/etc
 $PublishDir = Join-Path $SrcDir "SSStap\bin\Release\net8.0-windows\win-x64\publish"
 $WintunUrl = "https://www.wintun.net/builds/wintun-0.14.1.zip"
 $WintunZip = Join-Path $env:TEMP "wintun-0.14.1.zip"
-if (!(Test-Path (Join-Path $PublishDir "wintun.dll"))) {
-    Write-Host "Downloading wintun.dll (0.14.1)..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -UseBasicParsing
-    $ExtractDir = Join-Path $env:TEMP "wintun-extract"
-    Expand-Archive -Path $WintunZip -DestinationPath $ExtractDir -Force
-    Copy-Item (Join-Path $ExtractDir "wintun\bin\amd64\wintun.dll") -Destination $PublishDir -Force
-    Remove-Item $WintunZip -Force -ErrorAction SilentlyContinue
-    Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Bundled wintun.dll" -ForegroundColor Green
-}
+Write-Host "Downloading wintun.dll (0.14.1)..." -ForegroundColor Cyan
+Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -UseBasicParsing
+$ExtractDir = Join-Path $env:TEMP "wintun-extract"
+Expand-Archive -Path $WintunZip -DestinationPath $ExtractDir -Force
+Copy-Item (Join-Path $ExtractDir "wintun\bin\amd64\wintun.dll") -Destination $PublishDir -Force
+Remove-Item $WintunZip -Force -ErrorAction SilentlyContinue
+Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "Bundled wintun.dll" -ForegroundColor Green
 
 # 3. Find Inno Setup compiler
 $IsccPaths = @(

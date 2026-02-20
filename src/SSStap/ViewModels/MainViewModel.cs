@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Net;
 using System.Windows;
 using System.Windows.Input;
@@ -164,7 +165,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var session = WintunSession.Create("SSStap", "Wintun");
             if (session == null)
             {
-                StatusText = "Failed to create Wintun adapter. Try running as Administrator.";
+                StatusText = "Failed: stale Wintun drivers. Right-click fix-wintun-driver.ps1 in the SSStap folder, Run with PowerShell as Admin.";
                 return;
             }
 

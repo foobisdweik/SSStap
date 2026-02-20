@@ -48,7 +48,14 @@ public sealed class WintunSession : IDisposable
         var adapter = Wintun.WintunOpenAdapter(poolName);
         if (adapter.IsInvalid)
         {
-            adapter = Wintun.WintunCreateAdapter(poolName, tunnelType, nint.Zero);
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                if (attempt > 0)
+                    Thread.Sleep(2000);
+                adapter = Wintun.WintunCreateAdapter(poolName, tunnelType, nint.Zero);
+                if (!adapter.IsInvalid)
+                    break;
+            }
             if (adapter.IsInvalid)
                 return null;
         }
@@ -80,7 +87,15 @@ public sealed class WintunSession : IDisposable
             return null;
         }
 
-        Wintun.WintunGetAdapterLuid(adapter, out var luid);
+        var luid = default(Wintun.NetLuid);
+        try
+        {
+            Wintun.WintunGetAdapterLuid(adapter, out luid);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Old wintun.dll (pre-0.14) lacks WintunGetAdapterLuid. IP setup will use adapter-name fallback.
+        }
 
         return new WintunSession(adapter, session, readWaitEvent, poolName, luid);
     }
@@ -98,10 +113,13 @@ public sealed class WintunSession : IDisposable
     /// <summary>
     /// Assigns an IPv4 address to the adapter (e.g. 10.10.10.1/24).
     /// Requires admin. Call before or after Create.
+    /// Tries LUID first; falls back to adapter name when WintunGetAdapterLuid is unavailable.
     /// </summary>
     public bool SetAdapterIp(IPAddress address, IPAddress subnetMask)
     {
         var ctx = AdapterSetup.SetAdapterIp(address, subnetMask, Luid);
+        if (ctx == null)
+            ctx = AdapterSetup.SetAdapterIp(address, subnetMask, AdapterName);
         if (ctx == null)
             return false;
         _ipContext?.Delete();
