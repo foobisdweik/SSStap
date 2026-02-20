@@ -10,7 +10,7 @@ namespace SSStap.Tunnel;
 /// Receive blocks on WintunGetReadWaitEvent (100 ms slices) so cancellation is checked regularly.
 /// Send writes directly to the Wintun ring buffer.
 /// </summary>
-public sealed class WintunPacketSource : IPacketSource
+public sealed partial class WintunPacketSource : IPacketSource
 {
     private readonly WintunSession _session;
 
