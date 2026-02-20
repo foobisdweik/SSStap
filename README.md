@@ -1,6 +1,6 @@
 # SSStap
 
-Modern replacement for SSTap 1.0.9.7 — a Windows tunneling client that routes system-wide traffic through upstream proxies (SOCKS5, Shadowsocks, SSR).
+Windows tunneling client that routes system-wide traffic through upstream proxies (SOCKS5, Shadowsocks, SSR).
 
 ## Structure
 
@@ -8,7 +8,6 @@ Modern replacement for SSTap 1.0.9.7 — a Windows tunneling client that routes 
 SSStap/
 ├── assets/          # Config templates, rules, Unbound templates (copied to build output)
 ├── docs/            # Plan, architecture, bugtest reports
-├── reference/       # Legacy SSTap 1.0.9.7 artifacts (reverse-engineering reference)
 └── src/
     ├── SSStap/      # Main application
     └── SSStap.Tests/

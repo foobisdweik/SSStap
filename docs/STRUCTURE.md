@@ -29,14 +29,6 @@ SSStap/
 │   ├── WINTUN.md
 │   └── sstap_reverse_engineering_plan.md
 │
-├── reference/                 # SSTap 1.0.9.7 artifacts
-│   ├── Changelog.txt
-│   ├── readme.txt
-│   ├── privoxy.conf
-│   ├── lang/
-│   ├── skins/
-│   └── tap-driver/
-│
 └── src/
     ├── SSStap.sln
     ├── SSStap/                # Main app

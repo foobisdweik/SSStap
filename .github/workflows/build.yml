@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install Inno Setup 6
+        run: winget install JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent
+
+      - name: Restore
+        run: dotnet restore src/SSStap.sln
+        working-directory: ${{ github.workspace }}
+
+      - name: Build Debug
+        run: dotnet build src/SSStap.sln -c Debug --no-restore
+        working-directory: ${{ github.workspace }}
+
+      - name: Build Release & Installer
+        run: ./scripts/build-release.ps1
+        working-directory: ${{ github.workspace }}
+
+      - name: Bundle wintun for Debug
+        run: |
+          $wintunUrl = "https://www.wintun.net/builds/wintun-0.14.1.zip"
+          $publishDir = "src/SSStap/bin/Debug/net8.0-windows"
+          $zip = "$env:TEMP/wintun.zip"
+          Invoke-WebRequest -Uri $wintunUrl -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath "$env:TEMP/wintun" -Force
+          Copy-Item "$env:TEMP/wintun/wintun/bin/amd64/wintun.dll" -Destination $publishDir -Force
+        working-directory: ${{ github.workspace }}
+
+      - name: Create artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "src/SSStap/bin/Debug/net8.0-windows/*" -DestinationPath "dist/SSStap-Debug-win-x64.zip" -Force
+          $pub = "src/SSStap/bin/Release/net8.0-windows/win-x64/publish"
+          if (Test-Path $pub) {
+            Compress-Archive -Path "$pub/*" -DestinationPath "dist/SSStap-Release-win-x64.zip" -Force
+          }
+        working-directory: ${{ github.workspace }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SSStap-builds
+          path: dist/
