@@ -20,15 +20,30 @@ jobs:
 
       - name: Install Inno Setup 6
         run: |
-          winget list --name "Inno Setup" | findstr "Inno Setup"
-          if ($LASTEXITCODE -ne 0) {
+          $installed = winget list --name "Inno Setup" 2>$null | Select-String "Inno Setup"
+          if (-not $installed) {
             winget install JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent
           }
           exit 0
         shell: pwsh
 
+      - name: Fetch wintun.dll
+        run: |
+          $NativeDir = "assets\native"
+          $WintunDll = "$NativeDir\wintun.dll"
+          if (-not (Test-Path $WintunDll)) {
+            $zip = Join-Path $env:TEMP "wintun-0.14.1.zip"
+            $ext = Join-Path $env:TEMP "wintun-extract"
+            Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile $zip -UseBasicParsing -TimeoutSec 120
+            Expand-Archive -Path $zip -DestinationPath $ext -Force
+            $null = New-Item -ItemType Directory -Force -Path $NativeDir
+            Copy-Item "$ext\wintun\bin\amd64\wintun.dll" -Destination $WintunDll -Force
+            Write-Host "wintun.dll fetched OK."
+          }
+        shell: pwsh
+
       - name: Restore
-        run: dotnet restore src/SSStap.sln
+        run: dotnet restore src/SSStap.sln -p:WINTUN_SKIP_DOWNLOAD=1
         working-directory: ${{ github.workspace }}
 
       - name: Build installer

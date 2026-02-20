@@ -29,11 +29,12 @@ public static partial class AdapterSetup
             subnetMask.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             return null;
 
-        byte[] addrBytes = address.GetAddressBytes();
-        byte[] maskBytes = subnetMask.GetAddressBytes();
-        // IPAddr is in network byte order (big-endian): high octet first
-        uint addr = (uint)((addrBytes[0] << 24) | (addrBytes[1] << 16) | (addrBytes[2] << 8) | addrBytes[3]);
-        uint mask = (uint)((maskBytes[0] << 24) | (maskBytes[1] << 16) | (maskBytes[2] << 8) | maskBytes[3]);
+        // GetAddressBytes() returns bytes in network (big-endian) order, e.g. 10.10.10.1 → [10,10,10,1].
+        // BitConverter.ToUInt32 on a little-endian machine produces a uint whose in-memory layout
+        // is [10,10,10,1] — exactly what AddIPAddress (Win32 DWORD IPAddr) expects.
+        // The previous code built a big-endian *value* (0x0A0A0A01) which Win32 read as 1.10.10.10.
+        uint addr = BitConverter.ToUInt32(address.GetAddressBytes(), 0);
+        uint mask = BitConverter.ToUInt32(subnetMask.GetAddressBytes(), 0);
 
         if (!ConvertInterfaceLuidToIndex(ref luid, out uint ifIndex))
             return null;
@@ -51,7 +52,7 @@ public static partial class AdapterSetup
     /// </summary>
     /// <param name="address">IPv4 address (e.g. 10.10.10.1).</param>
     /// <param name="subnetMask">Subnet mask (e.g. 255.255.255.0).</param>
-    /// <param name="adapterName">Adapter name (e.g. "SSStap" or "SSStap-{guid}"). Matches Name or Description.</param>
+    /// <param name="adapterName">Adapter name (e.g. "SSStap"). Matches Name or Description.</param>
     /// <returns>Context for DeleteIPAddress, or null on failure.</returns>
     public static IpAddressContext? SetAdapterIp(IPAddress address, IPAddress subnetMask, string adapterName)
     {
@@ -64,10 +65,9 @@ public static partial class AdapterSetup
         if (ifIndex == null)
             return null;
 
-        byte[] addrBytes = address.GetAddressBytes();
-        byte[] maskBytes = subnetMask.GetAddressBytes();
-        uint addr = (uint)((addrBytes[0] << 24) | (addrBytes[1] << 16) | (addrBytes[2] << 8) | addrBytes[3]);
-        uint mask = (uint)((maskBytes[0] << 24) | (maskBytes[1] << 16) | (maskBytes[2] << 8) | maskBytes[3]);
+        // Same byte-order fix as the LUID overload.
+        uint addr = BitConverter.ToUInt32(address.GetAddressBytes(), 0);
+        uint mask = BitConverter.ToUInt32(subnetMask.GetAddressBytes(), 0);
 
         uint ret = AddIPAddress(addr, mask, ifIndex.Value, out uint nteContext, out uint nteInstance);
         if (ret != 0)
@@ -77,7 +77,7 @@ public static partial class AdapterSetup
     }
 
     /// <summary>
-    /// Finds the IPv4 interface index for an adapter whose Name or Description contains the given string.
+    /// Finds the IPv4 interface index for an adapter whose Name or Description contains <paramref name="adapterName"/>.
     /// </summary>
     public static uint? GetInterfaceIndexByAdapterName(string adapterName)
     {
@@ -98,6 +98,37 @@ public static partial class AdapterSetup
             }
         }
 
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the interface index of the first active physical adapter that has a default IPv4 gateway.
+    /// Used by SkipChina routing to identify which adapter carries non-proxied traffic.
+    /// </summary>
+    public static uint? GetDefaultGatewayInterfaceIndex()
+    {
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up)
+                continue;
+            if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                continue;
+
+            var props = ni.GetIPProperties();
+            if (props?.GatewayAddresses == null)
+                continue;
+
+            foreach (var gw in props.GatewayAddresses)
+            {
+                if (gw.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                    !gw.Address.Equals(IPAddress.Any))
+                {
+                    var ipv4 = props.GetIPv4Properties();
+                    if (ipv4 != null)
+                        return (uint)ipv4.Index;
+                }
+            }
+        }
         return null;
     }
 

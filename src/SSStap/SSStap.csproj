@@ -29,6 +29,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>unbound\forward-zone\template.china-list.conf</Link>
     </Content>
+    <!--
+      wintun.dll (amd64, 0.14.1) is fetched by the EnsureWintunDll target below if absent.
+      This ensures Debug, Release, and publish builds all have the correct DLL alongside the exe.
+    -->
+    <Content Include="..\..\assets\native\wintun.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <PropertyGroup>
@@ -48,6 +55,22 @@
     <RootNamespace>SSStap</RootNamespace>
     <AssemblyName>SSStap</AssemblyName>
     <LangVersion>12</LangVersion>
+    <WintunNativeDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\assets\native'))</WintunNativeDir>
   </PropertyGroup>
+
+  <!--
+    Auto-fetch wintun 0.14.1 (amd64) into assets/native/ at build time when the DLL is absent.
+    Skipped when WINTUN_SKIP_DOWNLOAD=1 (useful in restricted CI environments).
+    build-release.ps1 also pre-fetches it, so this is primarily a local dev convenience.
+  -->
+  <Target Name="EnsureWintunDll" BeforeTargets="BeforeBuild"
+          Condition="!Exists('$(WintunNativeDir)\wintun.dll') And '$(WINTUN_SKIP_DOWNLOAD)' != '1'">
+    <Message Text="[SSStap] wintun.dll not found — downloading 0.14.1 amd64 from wintun.net..." Importance="High" />
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -Command &quot;$zip = [System.IO.Path]::GetTempFileName() + '.zip'; $ext = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'wintun-msbuild-extract'); try { Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $zip -UseBasicParsing -TimeoutSec 60; Expand-Archive -Path $zip -DestinationPath $ext -Force; $null = New-Item -ItemType Directory -Force -Path '$(WintunNativeDir)'; Copy-Item (Join-Path $ext 'wintun\bin\amd64\wintun.dll') -Destination '$(WintunNativeDir)\wintun.dll' -Force; Write-Host '[SSStap] wintun.dll downloaded OK.' } finally { Remove-Item $zip,$ext -Recurse -Force -ErrorAction SilentlyContinue }&quot;"
+          StandardOutputImportance="High"
+          StandardErrorImportance="High" />
+    <Error Condition="!Exists('$(WintunNativeDir)\wintun.dll')"
+           Text="[SSStap] Failed to download wintun.dll. Place the amd64 wintun.dll from https://www.wintun.net/ at assets/native/wintun.dll and retry." />
+  </Target>
 
 </Project>

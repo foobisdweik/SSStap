@@ -6,31 +6,41 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $SrcDir = Join-Path $RepoRoot "src"
 $DistDir = Join-Path $RepoRoot "dist"
+$NativeDir = Join-Path $RepoRoot "assets\native"
 
 Write-Host "== Building SSStap Release ==" -ForegroundColor Cyan
 
-# 1. Publish
+# 1. Fetch wintun.dll into assets/native/ before building so the csproj Content item
+#    copies it to every output (Debug, Release, publish).
+$WintunDll = Join-Path $NativeDir "wintun.dll"
+if (-not (Test-Path $WintunDll)) {
+    Write-Host "Downloading wintun.dll 0.14.1 (amd64)..." -ForegroundColor Cyan
+    $WintunUrl  = "https://www.wintun.net/builds/wintun-0.14.1.zip"
+    $WintunZip  = Join-Path $env:TEMP "wintun-0.14.1.zip"
+    $ExtractDir = Join-Path $env:TEMP "wintun-extract"
+    try {
+        Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -UseBasicParsing -TimeoutSec 120
+        Expand-Archive -Path $WintunZip -DestinationPath $ExtractDir -Force
+        $null = New-Item -ItemType Directory -Force -Path $NativeDir
+        Copy-Item (Join-Path $ExtractDir "wintun\bin\amd64\wintun.dll") -Destination $WintunDll -Force
+        Write-Host "wintun.dll saved to assets/native/" -ForegroundColor Green
+    } finally {
+        Remove-Item $WintunZip, $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "wintun.dll already present in assets/native/ — skipping download." -ForegroundColor DarkGray
+}
+
+# 2. Publish (csproj Content item copies wintun.dll automatically)
 Push-Location $SrcDir
 try {
-    dotnet publish SSStap/SSStap.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true
+    dotnet publish SSStap/SSStap.csproj -c Release -r win-x64 --self-contained true `
+        -p:PublishReadyToRun=true -p:WINTUN_SKIP_DOWNLOAD=1
     if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
     Write-Host "Publish complete." -ForegroundColor Green
 } finally {
     Pop-Location
 }
-
-# 2. Bundle wintun.dll (official signed build from wintun.net) - always refresh to avoid stale 0.12/etc
-$PublishDir = Join-Path $SrcDir "SSStap\bin\Release\net8.0-windows\win-x64\publish"
-$WintunUrl = "https://www.wintun.net/builds/wintun-0.14.1.zip"
-$WintunZip = Join-Path $env:TEMP "wintun-0.14.1.zip"
-Write-Host "Downloading wintun.dll (0.14.1)..." -ForegroundColor Cyan
-Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -UseBasicParsing
-$ExtractDir = Join-Path $env:TEMP "wintun-extract"
-Expand-Archive -Path $WintunZip -DestinationPath $ExtractDir -Force
-Copy-Item (Join-Path $ExtractDir "wintun\bin\amd64\wintun.dll") -Destination $PublishDir -Force
-Remove-Item $WintunZip -Force -ErrorAction SilentlyContinue
-Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "Bundled wintun.dll" -ForegroundColor Green
 
 # 3. Find Inno Setup compiler
 $IsccPaths = @(
@@ -42,10 +52,7 @@ $IsccPaths = @(
 )
 $Iscc = $null
 foreach ($p in $IsccPaths) {
-    if (Test-Path $p) {
-        $Iscc = $p
-        break
-    }
+    if (Test-Path $p) { $Iscc = $p; break }
 }
 
 # 4. Build installer
@@ -60,12 +67,13 @@ if ($Iscc -and (Test-Path $IssPath)) {
         Write-Host "Installer: $($SetupExe.FullName)" -ForegroundColor Green
     }
 } else {
-    Write-Host ""
+    Write-Host "" 
     Write-Host "Inno Setup 6 not found. To create the installer:" -ForegroundColor Yellow
     Write-Host "  1. Install: winget install JRSoftware.InnoSetup" -ForegroundColor Yellow
     Write-Host "  2. Re-run this script, or open $IssPath in Inno Setup and compile (Ctrl+F9)" -ForegroundColor Yellow
     Write-Host ""
-    # Fallback: create zip of published output
+    # Fallback: zip the publish output
+    $PublishDir = Join-Path $SrcDir "SSStap\bin\Release\net8.0-windows\win-x64\publish"
     $ZipPath = Join-Path $DistDir "SSStap-0.1.0-win-x64.zip"
     if (Test-Path $PublishDir) {
         New-Item -ItemType Directory -Force -Path $DistDir | Out-Null

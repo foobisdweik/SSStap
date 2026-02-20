@@ -28,9 +28,11 @@ artifacts/
 *.log
 privoxy-log.log
 
-# Build output (contains copied DLLs, exe, etc.)
-# Place wintun.dll in bin/Debug/net8.0-windows/ for Connect to work
+# Build output
 dist/
+
+# wintun.dll is auto-downloaded by build-release.ps1 / MSBuild target — do not commit
+assets/native/*.dll
 
 # OS
 Thumbs.db
