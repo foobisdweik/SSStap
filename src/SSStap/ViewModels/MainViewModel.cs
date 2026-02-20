@@ -13,7 +13,9 @@ namespace SSStap.ViewModels;
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _configService = new();
+    private readonly ProxyTesterService _proxyTester = new();
     private WintunSession? _wintunSession;
+    private CancellationTokenSource? _testCts;
 
     [ObservableProperty]
     private ObservableCollection<ProxyConfig> _proxyConfigs = new();
@@ -35,6 +37,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _statusText = "Ready";
+
+    [ObservableProperty]
+    private bool _isTestRunning;
+
+    [ObservableProperty]
+    private ObservableCollection<LogEntry> _logEntries = new();
 
     public MainViewModel()
     {
@@ -197,7 +205,72 @@ public partial class MainViewModel : ObservableObject, IDisposable
         SaveConfig();
     }
 
-    public void Dispose() => _wintunSession?.Dispose();
+    [RelayCommand(CanExecute = nameof(CanTestProxy))]
+    private async Task TestProxy()
+    {
+        var proxy = SelectedProxy ?? (SelectedProxyIndex >= 0 && SelectedProxyIndex < ProxyConfigs.Count ? ProxyConfigs[SelectedProxyIndex] : null);
+        if (proxy == null)
+        {
+            StatusText = "Please select a proxy";
+            return;
+        }
+
+        _testCts?.Cancel();
+        _testCts = new CancellationTokenSource();
+        IsTestRunning = true;
+        LogEntries.Clear();
+        StatusText = "Testing proxy...";
+
+        var progress = new Progress<LogEntry>(e =>
+        {
+            Application.Current?.Dispatcher.Invoke(() => LogEntries.Add(e));
+        });
+
+        try
+        {
+            await _proxyTester.RunProxyTestAsync(
+                proxy.Server,
+                proxy.ServerPort,
+                string.IsNullOrWhiteSpace(proxy.Username) ? null : proxy.Username,
+                string.IsNullOrWhiteSpace(proxy.Password) ? null : proxy.Password,
+                progress,
+                _testCts.Token);
+            StatusText = "Proxy test complete";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Proxy test cancelled";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Proxy test failed: {ex.Message}";
+            Application.Current?.Dispatcher.Invoke(() =>
+                LogEntries.Add(new LogEntry(DateTime.Now.ToString("HH:mm:ss"), $"[-] {ex.Message}", LogSeverity.Error)));
+        }
+        finally
+        {
+            IsTestRunning = false;
+            _testCts?.Dispose();
+            _testCts = null;
+        }
+    }
+
+    private bool CanTestProxy() => !IsTestRunning;
+
+    [RelayCommand]
+    private void ClearLog()
+    {
+        LogEntries.Clear();
+    }
+
+    partial void OnIsTestRunningChanged(bool value) => TestProxyCommand.NotifyCanExecuteChanged();
+
+    public void Dispose()
+    {
+        _testCts?.Cancel();
+        _testCts?.Dispose();
+        _wintunSession?.Dispose();
+    }
 }
 
 public enum ProxyMode

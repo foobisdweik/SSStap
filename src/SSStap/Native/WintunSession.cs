@@ -56,8 +56,20 @@ public sealed class WintunSession : IDisposable
         var session = Wintun.WintunStartSession(adapter, ringCapacity);
         if (session.IsInvalid)
         {
+            // Existing adapter may be in use by another process (WireGuard, leftover session).
+            // Retry with a fresh adapter using a unique name.
             Wintun.WintunCloseAdapter(adapter);
-            return null;
+            var uniqueName = $"{poolName}-{Guid.NewGuid():N}"[..Math.Min(255, poolName.Length + 33)];
+            adapter = Wintun.WintunCreateAdapter(uniqueName, tunnelType, nint.Zero);
+            if (adapter.IsInvalid)
+                return null;
+            session = Wintun.WintunStartSession(adapter, ringCapacity);
+            if (session.IsInvalid)
+            {
+                Wintun.WintunCloseAdapter(adapter);
+                return null;
+            }
+            poolName = uniqueName; // use the actual adapter name for the session
         }
 
         nint readWaitEvent = Wintun.WintunGetReadWaitEvent(session);

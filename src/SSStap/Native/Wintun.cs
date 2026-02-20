@@ -2,6 +2,7 @@
 // P/Invoke wrapper for wintun.dll (https://www.wintun.net/)
 // API reference: https://git.zx2c4.com/wintun/about/
 
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace SSStap.Native;
@@ -12,6 +13,22 @@ namespace SSStap.Native;
 public static partial class Wintun
 {
     private const string DllName = "wintun";
+
+    static Wintun()
+    {
+        // Ensure we load our bundled wintun.dll from the app directory.
+        // Without this, another copy (e.g. from WireGuard or PATH) may load first
+        // and lack WintunGetAdapterLuid, causing "outdated" false positives.
+        NativeLibrary.SetDllImportResolver(typeof(Wintun).Assembly, (libraryName, assembly, searchPath) =>
+        {
+            if (libraryName != DllName)
+                return nint.Zero;
+            var path = Path.Combine(AppContext.BaseDirectory, "wintun.dll");
+            return NativeLibrary.TryLoad(path, assembly, searchPath, out var handle)
+                ? handle
+                : nint.Zero;
+        });
+    }
 
     // Constants from wintun.h
     public const uint MinRingCapacity = 0x20000;   // 128 KiB

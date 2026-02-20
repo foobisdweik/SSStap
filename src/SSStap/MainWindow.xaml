@@ -4,87 +4,148 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:converters="clr-namespace:SSStap.Converters"
+        xmlns:services="clr-namespace:SSStap.Services"
         mc:Ignorable="d"
-        Title="SSStap" Height="420" Width="520"
-        MinHeight="350" MinWidth="400"
+        Title="SSStap - Modern replacement for SSTap" Height="480" Width="720"
+        MinHeight="400" MinWidth="600"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <converters:InverseBooleanConverter x:Key="InverseBool"/>
+        <converters:LogSeverityToColorConverter x:Key="LogSeverityToColor"/>
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
     </Window.Resources>
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
-        <!-- Proxy Node Dropdown -->
-        <Grid Grid.Row="0" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Proxy Node:" VerticalAlignment="Center" Margin="0,0,12,0"/>
-            <ComboBox x:Name="ProxyComboBox" Grid.Column="1"
-                      ItemsSource="{Binding ProxyConfigs}"
-                      SelectedItem="{Binding SelectedProxy, Mode=TwoWay}"
-                      DisplayMemberPath="DisplayName"
-                      MinWidth="200" VerticalAlignment="Center"/>
-            <Button Grid.Column="2" Content="Add Proxy +" Padding="12,6"
-                    x:Name="AddProxyButton" Click="AddProxyButton_Click"
-                    ToolTip="Click to add a new proxy">
-                <Button.ContextMenu>
-                    <ContextMenu x:Name="AddProxyContextMenu">
-                        <MenuItem Header="Add SOCKS5 Proxy" Command="{Binding AddSocks5ProxyCommand}"/>
-                        <MenuItem Header="Add SS/SSR Proxy" Command="{Binding AddSsProxyCommand}"/>
-                        <MenuItem Header="Add from Link" Command="{Binding AddFromLinkCommand}"/>
-                    </ContextMenu>
-                </Button.ContextMenu>
-            </Button>
-        </Grid>
+        <!-- Left: Control Panel (SSTap-style) -->
+        <Border Grid.Column="0" Background="#FAFAFA" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
+            <Grid Margin="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-        <!-- Mode Selector -->
-        <Grid Grid.Row="1" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,12,0"/>
-            <ComboBox Grid.Column="1" x:Name="ModeComboBox"
-                     SelectedIndex="{Binding SelectedModeIndex}"
-                     MinWidth="200" VerticalAlignment="Center">
-                <ComboBoxItem Content="Global"/>
-                <ComboBoxItem Content="China IP Only"/>
-                <ComboBoxItem Content="Skip China IP"/>
-                <ComboBoxItem Content="Browser-only"/>
-            </ComboBox>
-        </Grid>
+                <!-- Shield icon + Proxy row -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <Viewbox Width="64" Height="64" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <Path Data="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" 
+                              Fill="#00BCD4" Stretch="Uniform"/>
+                    </Viewbox>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Proxy:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="ProxyComboBox" Grid.Column="1"
+                                  ItemsSource="{Binding ProxyConfigs}"
+                                  SelectedItem="{Binding SelectedProxy, Mode=TwoWay}"
+                                  DisplayMemberPath="DisplayName"
+                                  MinWidth="160" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button Content="⚡" ToolTip="Test proxy" Padding="6,4" FontSize="12"
+                                    Command="{Binding TestProxyCommand}"
+                                    IsEnabled="{Binding IsTestRunning, Converter={StaticResource InverseBool}}"/>
+                            <Button Content="+" ToolTip="Add proxy" Padding="8,4" Margin="4,0,0,0"
+                                    x:Name="AddProxyButton" Click="AddProxyButton_Click">
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="AddProxyContextMenu">
+                                        <MenuItem Header="Add SOCKS5 Proxy" Command="{Binding AddSocks5ProxyCommand}"/>
+                                        <MenuItem Header="Add SS/SSR Proxy" Command="{Binding AddSsProxyCommand}"/>
+                                        <MenuItem Header="Add from Link" Command="{Binding AddFromLinkCommand}"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
 
-        <!-- Connect / Disconnect -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
-            <Button Content="Connect" Padding="24,10" Margin="0,0,12,0"
-                    Command="{Binding ConnectCommand}"
-                    IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBool}}"/>
-            <Button Content="Disconnect" Padding="24,10"
-                    Command="{Binding DisconnectCommand}"
-                    IsEnabled="{Binding IsConnected}"/>
-        </StackPanel>
+                <!-- Mode -->
+                <Grid Grid.Row="1" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <ComboBox Grid.Column="1" x:Name="ModeComboBox"
+                              SelectedIndex="{Binding SelectedModeIndex}"
+                              MinWidth="160" VerticalAlignment="Center">
+                        <ComboBoxItem Content="Global"/>
+                        <ComboBoxItem Content="China IP Only"/>
+                        <ComboBoxItem Content="Skip China IP"/>
+                        <ComboBoxItem Content="Browser-only"/>
+                    </ComboBox>
+                </Grid>
 
-        <!-- Status -->
-        <Border Grid.Row="3" Background="#F5F5F5" Padding="12,8" CornerRadius="4" Margin="0,0,0,12">
-            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
+                <!-- Connect / Disconnect -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+                    <Button Content="Connect" Padding="24,10" Margin="0,0,12,0"
+                            Command="{Binding ConnectCommand}"
+                            Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVis}}"/>
+                    <Button Content="Disconnect" Padding="24,10"
+                            Command="{Binding DisconnectCommand}"
+                            Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+
+                <!-- Status -->
+                <Border Grid.Row="3" Background="#EEEEEE" Padding="10,8" CornerRadius="4" Margin="0,0,0,12">
+                    <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12"/>
+                </Border>
+
+                <Grid Grid.Row="4"/>
+                <!-- Footer -->
+                <Border Grid.Row="5" Background="#F0F0F0" Padding="8,6">
+                    <TextBlock Text="SSStap - Modern replacement for SSTap" Foreground="#666" FontSize="10"/>
+                </Border>
+            </Grid>
         </Border>
 
-        <!-- Spacer -->
-        <Grid Grid.Row="4"/>
+        <!-- Splitter -->
+        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
-        <!-- Footer -->
-        <TextBlock Grid.Row="5" Text="SSStap - Modern replacement for SSTap" 
-                   Foreground="Gray" FontSize="11" HorizontalAlignment="Center"/>
+        <!-- Right: Log / Console (SSTap-style) -->
+        <Border Grid.Column="2" Background="#1E1E1E">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Background="#2D2D2D" Padding="10,6">
+                    <Grid>
+                        <TextBlock Text="Log" Foreground="#CCCCCC" FontWeight="SemiBold"/>
+                        <Button HorizontalAlignment="Right" Content="Clear" Padding="8,4"
+                                Command="{Binding ClearLogCommand}" Background="#404040" Foreground="#CCCCCC"
+                                BorderThickness="0" Cursor="Hand"/>
+                    </Grid>
+                </Border>
+                <ScrollViewer x:Name="LogScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                              Padding="8">
+                    <ItemsControl ItemsSource="{Binding LogEntries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type services:LogEntry}">
+                                <TextBlock TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,1"
+                                           Foreground="{Binding Severity, Converter={StaticResource LogSeverityToColor}}">
+                                    <Run Text="["/>
+                                    <Run Text="{Binding Timestamp}"/>
+                                    <Run Text="] "/>
+                                    <Run Text="{Binding Message}"/>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
     </Grid>
 </Window>
