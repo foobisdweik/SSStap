@@ -41,12 +41,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         LoadConfig();
     }
 
+    partial void OnSelectedProxyChanged(ProxyConfig? value)
+    {
+        if (value != null)
+        {
+            var idx = ProxyConfigs.IndexOf(value);
+            if (idx >= 0 && idx != SelectedProxyIndex)
+                SelectedProxyIndex = idx;
+        }
+    }
+
     partial void OnSelectedProxyIndexChanged(int value)
     {
         if (value >= 0 && value < ProxyConfigs.Count)
-        {
             SelectedProxy = ProxyConfigs[value];
-        }
     }
 
     partial void OnSelectedModeIndexChanged(int value)
@@ -67,7 +75,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var appConfig = _configService.LoadAppConfig();
         SelectedModeIndex = Math.Clamp(appConfig.LastProxyModeIndex, 0, 3);
         SelectedMode = (ProxyMode)SelectedModeIndex;
-        SelectedProxyIndex = Math.Clamp(proxyList.IdInUse, 0, Math.Max(0, ProxyConfigs.Count - 1));
+        var idx = Math.Clamp(proxyList.IdInUse, 0, Math.Max(0, ProxyConfigs.Count - 1));
+        SelectedProxyIndex = idx;
+        SelectedProxy = ProxyConfigs.Count > 0 ? ProxyConfigs[idx] : null;
     }
 
     [RelayCommand]
@@ -133,7 +143,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Connect()
     {
-        if (SelectedProxy == null)
+        var proxy = SelectedProxy ?? (SelectedProxyIndex >= 0 && SelectedProxyIndex < ProxyConfigs.Count ? ProxyConfigs[SelectedProxyIndex] : null);
+        if (proxy == null)
         {
             StatusText = "Please select a proxy";
             return;
@@ -159,7 +170,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _wintunSession?.Dispose();
             _wintunSession = session;
             IsConnected = true;
-            StatusText = $"Connected to {SelectedProxy.DisplayName} (Wintun ready)";
+            StatusText = $"Connected to {proxy.DisplayName} (Wintun ready)";
             SaveConfig();
         }
         catch (DllNotFoundException ex)

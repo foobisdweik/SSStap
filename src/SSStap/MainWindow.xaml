@@ -32,7 +32,7 @@
             <TextBlock Text="Proxy Node:" VerticalAlignment="Center" Margin="0,0,12,0"/>
             <ComboBox x:Name="ProxyComboBox" Grid.Column="1"
                       ItemsSource="{Binding ProxyConfigs}"
-                      SelectedIndex="{Binding SelectedProxyIndex}"
+                      SelectedItem="{Binding SelectedProxy, Mode=TwoWay}"
                       DisplayMemberPath="DisplayName"
                       MinWidth="200" VerticalAlignment="Center"/>
             <Button Grid.Column="2" Content="Add Proxy +" Padding="12,6"
