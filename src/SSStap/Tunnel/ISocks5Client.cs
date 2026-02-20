@@ -1,0 +1,45 @@
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+
+namespace SSStap.Tunnel;
+
+/// <summary>
+/// SOCKS5 client interface for TCP CONNECT and UDP ASSOCIATE.
+/// </summary>
+public interface ISocks5Client
+{
+    /// <summary>Proxy server host.</summary>
+    string Host { get; }
+
+    /// <summary>Proxy server port.</summary>
+    int Port { get; }
+
+    /// <summary>Optional username for auth.</summary>
+    string? Username { get; }
+
+    /// <summary>Optional password for auth.</summary>
+    string? Password { get; }
+
+    /// <summary>Establishes a TCP connection through SOCKS5 CONNECT to the target.</summary>
+    Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, CancellationToken ct = default);
+
+    /// <summary>Opens UDP ASSOCIATE and returns the relay endpoint for sending encapsulated UDP datagrams.</summary>
+    Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default);
+}
+
+/// <summary>Info returned from UDP ASSOCIATE. BindAddress is the 4-byte IP + 2-byte port for SOCKS5 UDP envelope. Dispose to close the TCP control connection.</summary>
+public class UdpRelayInfo : IDisposable
+{
+    public IPEndPoint RelayEndPoint { get; }
+    public byte[] BindAddress { get; }
+    internal TcpClient? ControlConnection { get; set; }
+
+    public UdpRelayInfo(IPEndPoint relayEndPoint, byte[] bindAddress)
+    {
+        RelayEndPoint = relayEndPoint;
+        BindAddress = bindAddress;
+    }
+
+    public void Dispose() => ControlConnection?.Dispose();
+}

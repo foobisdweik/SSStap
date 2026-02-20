@@ -1,32 +1,35 @@
-{
-   "configs" : [
-      {
-         "AdditionalRoute" : "",
-         "ConnectedTimes" : 39,
-         "Download_traffic" : 0.0,
-         "FailureTimes" : 0,
-         "Latency" : 1,
-         "Upload_traffic" : 0.0,
-         "charge_type" : 0,
-         "enable" : true,
-         "group" : "Default Group",
-         "iplocation" : "",
-         "ipregion" : "",
-         "method" : "none",
-         "nCountryIndex" : -1,
-         "obfs" : "plain",
-         "obfsparam" : "",
-         "password" : "",
-         "protocol" : "origin",
-         "protocolparam" : "",
-         "remarks" : "",
-         "server" : "172.20.10.1",
-         "server_port" : 9999,
-         "server_udp_port" : 0,
-         "type" : 5,
-         "udp_over_tcp" : 0,
-         "username" : ""
-      }
-   ],
-   "idInUse" : 0
+﻿{
+  "configs": [
+    {
+      "id": "848b0449-c205-4d33-aba5-ca21e8afa23f",
+      "server": "172.20.10.1",
+      "server_port": 9999,
+      "server_udp_port": 0,
+      "password": "",
+      "method": "none",
+      "protocol": "origin",
+      "obfs": "plain",
+      "obfsparam": "",
+      "protocolparam": "",
+      "remarks": "pySOCKS",
+      "group": "Default Group",
+      "type": 5,
+      "enable_quic": false,
+      "username": "",
+      "AdditionalRoute": "",
+      "enable": true,
+      "ConnectedTimes": 0,
+      "Download_traffic": 0,
+      "FailureTimes": 0,
+      "Latency": 0,
+      "Upload_traffic": 0,
+      "charge_type": 0,
+      "iplocation": "",
+      "ipregion": "",
+      "nCountryIndex": -1,
+      "udp_over_tcp": 0,
+      "displayName": "pySOCKS"
+    }
+  ],
+  "idInUse": 0
 }

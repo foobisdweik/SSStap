@@ -1,0 +1,36 @@
+# Build
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.cache
+.vs/
+*.rsuser
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# IDE
+.idea/
+.cursor/
+.vscode/
+*.sln.docstates
+
+# Logs
+*.log
+privoxy-log.log
+
+# Build output (contains copied DLLs, exe, etc.)
+# Place wintun.dll in bin/Debug/net8.0-windows/ for Connect to work
+
+# OS
+Thumbs.db
+.DS_Store

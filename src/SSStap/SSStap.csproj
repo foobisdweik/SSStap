@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\assets\config\proxylist.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>config\proxylist.json</Link>
+    </Content>
+    <Content Include="..\..\assets\config\config.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>config\config.ini</Link>
+    </Content>
+    <Content Include="..\..\assets\rules\China-IP-only.rules">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rules\China-IP-only.rules</Link>
+    </Content>
+    <Content Include="..\..\assets\rules\Skip-all-China-IP.rules">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rules\Skip-all-China-IP.rules</Link>
+    </Content>
+    <Content Include="..\..\assets\unbound\template-service.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>unbound\template-service.conf</Link>
+    </Content>
+    <Content Include="..\..\assets\unbound\forward-zone\template.china-list.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>unbound\forward-zone\template.china-list.conf</Link>
+    </Content>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SSStap</RootNamespace>
+    <AssemblyName>SSStap</AssemblyName>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+
+</Project>

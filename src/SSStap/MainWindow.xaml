@@ -1,0 +1,90 @@
+<Window x:Class="SSStap.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:converters="clr-namespace:SSStap.Converters"
+        mc:Ignorable="d"
+        Title="SSStap" Height="420" Width="520"
+        MinHeight="350" MinWidth="400"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBooleanConverter x:Key="InverseBool"/>
+    </Window.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Proxy Node Dropdown -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Proxy Node:" VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <ComboBox x:Name="ProxyComboBox" Grid.Column="1"
+                      ItemsSource="{Binding ProxyConfigs}"
+                      SelectedIndex="{Binding SelectedProxyIndex}"
+                      DisplayMemberPath="DisplayName"
+                      MinWidth="200" VerticalAlignment="Center"/>
+            <Button Grid.Column="2" Content="Add Proxy +" Padding="12,6"
+                    x:Name="AddProxyButton" Click="AddProxyButton_Click"
+                    ToolTip="Click to add a new proxy">
+                <Button.ContextMenu>
+                    <ContextMenu x:Name="AddProxyContextMenu">
+                        <MenuItem Header="Add SOCKS5 Proxy" Command="{Binding AddSocks5ProxyCommand}"/>
+                        <MenuItem Header="Add SS/SSR Proxy" Command="{Binding AddSsProxyCommand}"/>
+                        <MenuItem Header="Add from Link" Command="{Binding AddFromLinkCommand}"/>
+                    </ContextMenu>
+                </Button.ContextMenu>
+            </Button>
+        </Grid>
+
+        <!-- Mode Selector -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <ComboBox Grid.Column="1" x:Name="ModeComboBox"
+                     SelectedIndex="{Binding SelectedModeIndex}"
+                     MinWidth="200" VerticalAlignment="Center">
+                <ComboBoxItem Content="Global"/>
+                <ComboBoxItem Content="China IP Only"/>
+                <ComboBoxItem Content="Skip China IP"/>
+                <ComboBoxItem Content="Browser-only"/>
+            </ComboBox>
+        </Grid>
+
+        <!-- Connect / Disconnect -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="Connect" Padding="24,10" Margin="0,0,12,0"
+                    Command="{Binding ConnectCommand}"
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBool}}"/>
+            <Button Content="Disconnect" Padding="24,10"
+                    Command="{Binding DisconnectCommand}"
+                    IsEnabled="{Binding IsConnected}"/>
+        </StackPanel>
+
+        <!-- Status -->
+        <Border Grid.Row="3" Background="#F5F5F5" Padding="12,8" CornerRadius="4" Margin="0,0,0,12">
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- Spacer -->
+        <Grid Grid.Row="4"/>
+
+        <!-- Footer -->
+        <TextBlock Grid.Row="5" Text="SSStap - Modern replacement for SSTap" 
+                   Foreground="Gray" FontSize="11" HorizontalAlignment="Center"/>
+    </Grid>
+</Window>
