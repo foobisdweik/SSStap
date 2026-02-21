@@ -1,4 +1,5 @@
 using System.Net;
+using System.Buffers.Binary;
 
 namespace SSStap.PacketProcessing;
 
@@ -45,39 +46,9 @@ public static class IpPacketParser
         buffer.Slice(12, 4).CopyTo(srcIp);
         buffer.Slice(16, 4).CopyTo(dstIp);
 
-        int srcPort, dstPort;
-        int payloadOffset;
-        int payloadLength;
-
-        if (protocol == 6) // TCP
+        if (!TryParseTransport(buffer, protocol, ihl, totalLength, out var transport))
         {
-            if (totalLength < ihl + MinTcpHeaderSize)
-                return false;
-            var tcpStart = buffer.Slice(ihl);
-            srcPort = (tcpStart[0] << 8) | tcpStart[1];
-            dstPort = (tcpStart[2] << 8) | tcpStart[3];
-            int tcpDataOffset = ((tcpStart[12] >> 4) & 0x0F) * 4;
-            if (tcpDataOffset < MinTcpHeaderSize)
-                return false;
-            payloadOffset = ihl + tcpDataOffset;
-            payloadLength = totalLength - payloadOffset;
-        }
-        else if (protocol == 17) // UDP
-        {
-            if (totalLength < ihl + UdpHeaderSize)
-                return false;
-            var udpStart = buffer.Slice(ihl);
-            srcPort = (udpStart[0] << 8) | udpStart[1];
-            dstPort = (udpStart[2] << 8) | udpStart[3];
-            payloadOffset = ihl + UdpHeaderSize;
-            payloadLength = totalLength - payloadOffset;
-        }
-        else
-        {
-            srcPort = 0;
-            dstPort = 0;
-            payloadOffset = ihl;
-            payloadLength = totalLength - ihl;
+            return false;
         }
 
         parsed = new ParsedPacket
@@ -88,11 +59,104 @@ public static class IpPacketParser
             IpHeaderLength = ihl,
             SourceAddress = new IPAddress(srcIp),
             DestinationAddress = new IPAddress(dstIp),
-            SourcePort = (ushort)srcPort,
-            DestinationPort = (ushort)dstPort,
-            PayloadOffset = payloadOffset,
-            PayloadLength = payloadLength,
+            SourcePort = (ushort)transport.SourcePort,
+            DestinationPort = (ushort)transport.DestinationPort,
+            PayloadOffset = transport.PayloadOffset,
+            PayloadLength = transport.PayloadLength,
+            TcpSequenceNumber = transport.TcpSequenceNumber,
+            TcpAcknowledgmentNumber = transport.TcpAcknowledgmentNumber,
+            TcpHeaderLength = transport.TcpHeaderLength,
+            TcpFlags = transport.TcpFlags,
+            TcpWindowSize = transport.TcpWindowSize,
         };
         return true;
     }
+
+    private static bool TryParseTransport(
+        ReadOnlySpan<byte> buffer,
+        byte protocol,
+        int ihl,
+        ushort totalLength,
+        out TransportParseResult result)
+    {
+        result = new TransportParseResult(
+            SourcePort: 0,
+            DestinationPort: 0,
+            PayloadOffset: ihl,
+            PayloadLength: totalLength - ihl,
+            TcpSequenceNumber: 0,
+            TcpAcknowledgmentNumber: 0,
+            TcpHeaderLength: 0,
+            TcpFlags: 0,
+            TcpWindowSize: 0);
+
+        if (protocol == 6)
+        {
+            if (totalLength < ihl + MinTcpHeaderSize)
+                return false;
+
+            var tcpStart = buffer.Slice(ihl);
+            int srcPort = (tcpStart[0] << 8) | tcpStart[1];
+            int dstPort = (tcpStart[2] << 8) | tcpStart[3];
+            int tcpDataOffset = ((tcpStart[12] >> 4) & 0x0F) * 4;
+
+            if (tcpDataOffset < MinTcpHeaderSize || totalLength < ihl + tcpDataOffset)
+                return false;
+
+            uint tcpSeq = BinaryPrimitives.ReadUInt32BigEndian(tcpStart.Slice(4, 4));
+            uint tcpAck = BinaryPrimitives.ReadUInt32BigEndian(tcpStart.Slice(8, 4));
+            var tcpFlags = (TcpControlBits)tcpStart[13];
+            ushort tcpWindow = BinaryPrimitives.ReadUInt16BigEndian(tcpStart.Slice(14, 2));
+            int payloadOffset = ihl + tcpDataOffset;
+            int payloadLength = totalLength - payloadOffset;
+
+            result = new TransportParseResult(
+                srcPort,
+                dstPort,
+                payloadOffset,
+                payloadLength,
+                tcpSeq,
+                tcpAck,
+                tcpDataOffset,
+                tcpFlags,
+                tcpWindow);
+            return true;
+        }
+
+        if (protocol == 17)
+        {
+            if (totalLength < ihl + UdpHeaderSize)
+                return false;
+
+            var udpStart = buffer.Slice(ihl);
+            int srcPort = (udpStart[0] << 8) | udpStart[1];
+            int dstPort = (udpStart[2] << 8) | udpStart[3];
+            int payloadOffset = ihl + UdpHeaderSize;
+            int payloadLength = totalLength - payloadOffset;
+
+            result = new TransportParseResult(
+                srcPort,
+                dstPort,
+                payloadOffset,
+                payloadLength,
+                0,
+                0,
+                0,
+                0,
+                0);
+        }
+
+        return true;
+    }
+
+    private readonly record struct TransportParseResult(
+        int SourcePort,
+        int DestinationPort,
+        int PayloadOffset,
+        int PayloadLength,
+        uint TcpSequenceNumber,
+        uint TcpAcknowledgmentNumber,
+        int TcpHeaderLength,
+        TcpControlBits TcpFlags,
+        ushort TcpWindowSize);
 }

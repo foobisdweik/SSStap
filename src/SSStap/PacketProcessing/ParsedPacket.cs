@@ -13,6 +13,19 @@ public enum TransportProtocol
     Icmp = 1,
 }
 
+[Flags]
+public enum TcpControlBits : byte
+{
+    Fin = 0x01,
+    Syn = 0x02,
+    Rst = 0x04,
+    Psh = 0x08,
+    Ack = 0x10,
+    Urg = 0x20,
+    Ece = 0x40,
+    Cwr = 0x80,
+}
+
 /// <summary>
 /// Result of parsing a raw IP packet from Wintun.
 /// Contains L3 (IP) and L4 (TCP/UDP) header info and payload.
@@ -48,6 +61,21 @@ public sealed class ParsedPacket
 
     /// <summary>Length of L4 payload in bytes.</summary>
     public int PayloadLength { get; init; }
+
+    /// <summary>TCP sequence number (TCP packets only).</summary>
+    public uint TcpSequenceNumber { get; init; }
+
+    /// <summary>TCP acknowledgement number (TCP packets only).</summary>
+    public uint TcpAcknowledgmentNumber { get; init; }
+
+    /// <summary>TCP header length in bytes (TCP packets only).</summary>
+    public int TcpHeaderLength { get; init; }
+
+    /// <summary>TCP control flags (TCP packets only).</summary>
+    public TcpControlBits TcpFlags { get; init; }
+
+    /// <summary>TCP window size (TCP packets only).</summary>
+    public ushort TcpWindowSize { get; init; }
 
     /// <summary>Transported protocol.</summary>
     public TransportProtocol Transport => Protocol switch
