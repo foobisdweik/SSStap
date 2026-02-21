@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  repository_dispatch:
+    types: [workspace-ci]   # triggered by workspace repo on cross-repo changes
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/SSStap/SSStap.csproj
+
+      - name: Build
+        run: dotnet build src/SSStap/SSStap.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test src/SSStap.Tests/SSStap.Tests.csproj -c Release --no-build --verbosity normal
+        continue-on-error: false
+
+      - name: Publish (win-x64)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          dotnet publish src/SSStap/SSStap.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o publish/
+
+      - name: Upload artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SSStap-win-x64
+          path: publish/
+          retention-days: 14
