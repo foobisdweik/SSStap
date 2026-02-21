@@ -13,21 +13,17 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>config\config.ini</Link>
     </Content>
-    <Content Include="..\..\assets\rules\China-IP-only.rules">
+    <Content Include="..\..\assets\rules\China-IP-only.rules" Condition="Exists('..\..\assets\rules\China-IP-only.rules')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>rules\China-IP-only.rules</Link>
     </Content>
-    <Content Include="..\..\assets\rules\Skip-all-China-IP.rules">
+    <Content Include="..\..\assets\rules\Skip-all-China-IP.rules" Condition="Exists('..\..\assets\rules\Skip-all-China-IP.rules')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>rules\Skip-all-China-IP.rules</Link>
     </Content>
     <Content Include="..\..\assets\unbound\template-service.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>unbound\template-service.conf</Link>
-    </Content>
-    <Content Include="..\..\assets\unbound\forward-zone\template.china-list.conf">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>unbound\forward-zone\template.china-list.conf</Link>
     </Content>
     <!--
       wintun.dll (amd64, 0.14.1) is fetched by the EnsureWintunDll target below if absent.

@@ -18,9 +18,7 @@ SSStap/
 │   │   ├── Skip-all-China-IP.rules
 │   │   └── ...
 │   └── unbound/
-│       ├── template-service.conf
-│       └── forward-zone/
-│           └── template.china-list.conf
+│       └── template-service.conf
 │
 ├── docs/
 │   ├── BUGTEST_REPORT.md
