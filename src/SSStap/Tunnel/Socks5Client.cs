@@ -104,7 +104,7 @@ public sealed class Socks5Client(string host, int port, string? username = null,
         var relayIp = new IPAddress(bindAddress.AsSpan(0, 4));
         var relayEp = new IPEndPoint(relayIp, bindPort);
 
-        return new UdpRelayInfo(relayEp, bindAddress) { ControlConnection = client };
+        return new UdpRelayInfo(relayEp) { ControlConnection = client };
     }
 
     private async Task SendUserPassAuthAsync(Stream stream, CancellationToken ct)
