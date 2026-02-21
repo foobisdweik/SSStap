@@ -1,7 +1,9 @@
-name: Build
+name: Build installer
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -19,12 +21,7 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Install Inno Setup 6
-        run: |
-          $installed = winget list --name "Inno Setup" 2>$null | Select-String "Inno Setup"
-          if (-not $installed) {
-            winget install JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent
-          }
-          exit 0
+        run: choco install innosetup --yes --no-progress
         shell: pwsh
 
       - name: Fetch wintun.dll
@@ -44,6 +41,10 @@ jobs:
 
       - name: Restore
         run: dotnet restore src/SSStap.sln -p:WINTUN_SKIP_DOWNLOAD=1
+        working-directory: ${{ github.workspace }}
+
+      - name: Test
+        run: dotnet test src/SSStap.Tests/SSStap.Tests.csproj -c Release -p:WINTUN_SKIP_DOWNLOAD=1 --verbosity normal
         working-directory: ${{ github.workspace }}
 
       - name: Build installer
