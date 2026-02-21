@@ -17,6 +17,7 @@ public sealed class TunnelEngine
     private readonly ISocks5Client _socks5;
     private readonly RouteManager _routeManager;
     private readonly RoutingMode _routingMode;
+    private readonly DnsInterceptCache _dnsInterceptCache = new();
     private readonly ConcurrentDictionary<ConnectionKey, TcpConnectionState> _tcpConnections = new();
     private UdpRelayInfo? _udpRelay;
     private CancellationTokenSource? _cts;
@@ -123,7 +124,8 @@ public sealed class TunnelEngine
     {
         try
         {
-            var stream = await _socks5.ConnectTcpAsync(key.DestAddress, key.DestPort, ct);
+            _dnsInterceptCache.TryGetHostname(key.DestAddress, out var hostname);
+            var stream = await _socks5.ConnectTcpAsync(key.DestAddress, key.DestPort, hostname, ct);
             state.SetStream(stream);
 
             // Start read loop: proxy -> Wintun
@@ -206,8 +208,18 @@ public sealed class TunnelEngine
                     3 when data.Length > 4 => 7 + data[4], // Domain: RSV+FRAG+ATYP+LEN_BYTE+domain+PORT
                     _ => 10
                 };
+
+                if (data.Length < headerLen)
+                    continue;
+
+                var originPort = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(headerLen - 2, 2));
                 if (data.Length > headerLen)
+                {
+                    if (originPort == 53)
+                        _dnsInterceptCache.InterceptDnsResponse(data.AsSpan(headerLen));
+
                     await _packetSource.SendAsync(data.AsMemory(headerLen), ct);
+                }
             }
         }
         catch (OperationCanceledException) { }

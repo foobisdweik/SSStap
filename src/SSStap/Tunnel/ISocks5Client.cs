@@ -22,7 +22,7 @@ public interface ISocks5Client
     string? Password { get; }
 
     /// <summary>Establishes a TCP connection through SOCKS5 CONNECT to the target.</summary>
-    Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, CancellationToken ct = default);
+    Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default);
 
     /// <summary>Opens UDP ASSOCIATE and returns the relay endpoint for sending encapsulated UDP datagrams.</summary>
     Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default);

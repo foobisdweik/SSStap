@@ -16,6 +16,8 @@ public sealed class Socks5Client : ISocks5Client
     private const byte CmdConnect = 1;
     private const byte CmdUdpAssociate = 3;
     private const byte AtypIPv4 = 1;
+    private const byte AtypDomain = 3;
+    private const byte AtypIPv6 = 4;
     private const byte AuthNone = 0;
     private const byte AuthUserPass = 2;
 
@@ -32,7 +34,7 @@ public sealed class Socks5Client : ISocks5Client
         Password = password;
     }
 
-    public async Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, CancellationToken ct = default)
+    public async Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default)
     {
         var client = new TcpClient();
         await client.ConnectAsync(Host, Port, ct);
@@ -64,17 +66,38 @@ public sealed class Socks5Client : ISocks5Client
         }
 
         // CONNECT: VER(5) CMD(1) RSV(1) ATYP(1) DST.ADDR DST.PORT
-        var addrBytes = targetAddress.GetAddressBytes();
-        if (addrBytes.Length != 4)
-            throw new ArgumentException("IPv4 only", nameof(targetAddress));
+        byte[] request;
+        if (!string.IsNullOrEmpty(hostname))
+        {
+            if (hostname.Length > 255)
+                throw new ArgumentException("Hostname length must be <= 255", nameof(hostname));
+            if (!hostname.All(c => c <= 0x7F))
+                throw new ArgumentException("Hostname must contain only ASCII characters", nameof(hostname));
 
-        var request = new byte[4 + 4 + 2]; // 4 + addr + 2 port
-        request[0] = Version;
-        request[1] = CmdConnect;
-        request[2] = 0;
-        request[3] = AtypIPv4;
-        addrBytes.CopyTo(request, 4);
-        BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(8), (ushort)targetPort);
+            var hostBytes = Encoding.ASCII.GetBytes(hostname);
+            request = new byte[4 + 1 + hostBytes.Length + 2];
+            request[0] = Version;
+            request[1] = CmdConnect;
+            request[2] = 0;
+            request[3] = AtypDomain;
+            request[4] = (byte)hostBytes.Length;
+            hostBytes.CopyTo(request, 5);
+            BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(5 + hostBytes.Length), (ushort)targetPort);
+        }
+        else
+        {
+            var addrBytes = targetAddress.GetAddressBytes();
+            if (addrBytes.Length != 4)
+                throw new ArgumentException("IPv4 only", nameof(targetAddress));
+
+            request = new byte[4 + 4 + 2]; // 4 + addr + 2 port
+            request[0] = Version;
+            request[1] = CmdConnect;
+            request[2] = 0;
+            request[3] = AtypIPv4;
+            addrBytes.CopyTo(request, 4);
+            BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(8), (ushort)targetPort);
+        }
         await stream.WriteAsync(request, ct);
 
         // Response: VER(5) REP(1) RSV(1) ATYP(1) BND.ADDR BND.PORT
@@ -85,10 +108,27 @@ public sealed class Socks5Client : ISocks5Client
         if (rep[1] != 0)
             throw new InvalidOperationException($"SOCKS5 connect failed: {rep[1]}");
 
-        int addrLen = rep[3] == AtypIPv4 ? 4 : (rep[3] == 3 ? rep[4] : 16);
-        var bindAddr = new byte[1 + addrLen + 2];
-        bindAddr[0] = rep[3];
-        await ReadExactlyAsync(stream, bindAddr.AsMemory(1, addrLen + 2), ct);
+        if (rep[3] == AtypIPv4)
+        {
+            var bindAddr = new byte[4 + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+        }
+        else if (rep[3] == AtypIPv6)
+        {
+            var bindAddr = new byte[16 + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+        }
+        else if (rep[3] == AtypDomain)
+        {
+            var len = new byte[1];
+            await ReadExactlyAsync(stream, len, ct);
+            var bindAddr = new byte[len[0] + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+        }
+        else
+        {
+            throw new InvalidOperationException($"SOCKS5 reply address type not supported: {rep[3]}");
+        }
 
         return stream;
     }
