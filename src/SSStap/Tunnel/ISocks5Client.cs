@@ -9,18 +9,6 @@ namespace SSStap.Tunnel;
 /// </summary>
 public interface ISocks5Client
 {
-    /// <summary>Proxy server host.</summary>
-    string Host { get; }
-
-    /// <summary>Proxy server port.</summary>
-    int Port { get; }
-
-    /// <summary>Optional username for auth.</summary>
-    string? Username { get; }
-
-    /// <summary>Optional password for auth.</summary>
-    string? Password { get; }
-
     /// <summary>Establishes a TCP connection through SOCKS5 CONNECT to the target.</summary>
     Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default);
 
@@ -29,21 +17,15 @@ public interface ISocks5Client
 }
 
 /// <summary>Info returned from UDP ASSOCIATE. BindAddress is the 4-byte IP + 2-byte port for SOCKS5 UDP envelope. Dispose to close the TCP control connection and UDP socket.</summary>
-public class UdpRelayInfo : IDisposable
+public class UdpRelayInfo(IPEndPoint relayEndPoint, byte[] bindAddress) : IDisposable
 {
-    public IPEndPoint RelayEndPoint { get; }
-    public byte[] BindAddress { get; }
+    public IPEndPoint RelayEndPoint { get; } = relayEndPoint;
+    public byte[] BindAddress { get; } = bindAddress;
     internal TcpClient? ControlConnection { get; set; }
     private bool _disposed;
 
     /// <summary>UDP socket used to send/receive datagrams to the SOCKS5 relay endpoint.</summary>
     public UdpClient? UdpSocket { get; set; }
-
-    public UdpRelayInfo(IPEndPoint relayEndPoint, byte[] bindAddress)
-    {
-        RelayEndPoint = relayEndPoint;
-        BindAddress = bindAddress;
-    }
 
     public void Dispose()
     {

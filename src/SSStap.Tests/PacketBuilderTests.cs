@@ -81,6 +81,9 @@ public class PacketBuilderTests
     [Theory]
     [InlineData(TcpControlBits.Fin | TcpControlBits.Ack)]
     [InlineData(TcpControlBits.Rst | TcpControlBits.Ack)]
+    [InlineData(TcpControlBits.Urg | TcpControlBits.Ack)]
+    [InlineData(TcpControlBits.Ece | TcpControlBits.Ack)]
+    [InlineData(TcpControlBits.Cwr | TcpControlBits.Ack)]
     public void BuildTcpResponse_ControlFlagsArePreserved(TcpControlBits flags)
     {
         var srcIp = IPAddress.Parse("9.9.9.9");
@@ -140,6 +143,6 @@ public class PacketBuilderTests
         var dstIp = IPAddress.Parse("fd00::1234");
 
         Assert.Throws<ArgumentException>(() =>
-            PacketBuilder.BuildUdpResponse(srcIp, 53, dstIp, 53000, new byte[] { 0x01 }));
+            PacketBuilder.BuildUdpResponse(srcIp, 53, dstIp, 53000, [0x01]));
     }
 }

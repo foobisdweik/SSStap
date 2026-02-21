@@ -10,7 +10,7 @@ namespace SSStap.Tunnel;
 /// SOCKS5 client implementation for TCP CONNECT and UDP ASSOCIATE.
 /// RFC 1928 (SOCKS5), RFC 1929 (auth).
 /// </summary>
-public sealed class Socks5Client : ISocks5Client
+public sealed class Socks5Client(string host, int port, string? username = null, string? password = null) : ISocks5Client
 {
     private const byte Version = 5;
     private const byte CmdConnect = 1;
@@ -21,18 +21,10 @@ public sealed class Socks5Client : ISocks5Client
     private const byte AuthNone = 0;
     private const byte AuthUserPass = 2;
 
-    public string Host { get; }
-    public int Port { get; }
-    public string? Username { get; }
-    public string? Password { get; }
-
-    public Socks5Client(string host, int port, string? username = null, string? password = null)
-    {
-        Host = host;
-        Port = port;
-        Username = username;
-        Password = password;
-    }
+    public string Host { get; } = host;
+    public int Port { get; } = port;
+    public string? Username { get; } = username;
+    public string? Password { get; } = password;
 
     public async Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default)
     {
