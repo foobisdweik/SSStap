@@ -37,100 +37,24 @@ public sealed class Socks5Client : ISocks5Client
     public async Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default)
     {
         var client = new TcpClient();
-        await client.ConnectAsync(Host, Port, ct);
-
-        var stream = client.GetStream();
-
-        // Greeting: VER(5) NMETHODS(1) METHODS(1)
-        bool useAuth = !string.IsNullOrEmpty(Username) || !string.IsNullOrEmpty(Password);
-        var methods = useAuth ? new[] { AuthNone, AuthUserPass } : new[] { AuthNone };
-        var greeting = new byte[2 + methods.Length];
-        greeting[0] = Version;
-        greeting[1] = (byte)methods.Length;
-        Array.Copy(methods, 0, greeting, 2, methods.Length);
-        await stream.WriteAsync(greeting, ct);
-
-        // Server response: VER(5) METHOD(1)
-        var resp = new byte[2];
-        await ReadExactlyAsync(stream, resp, ct);
-        if (resp[0] != Version)
-            throw new InvalidOperationException($"SOCKS5 version mismatch: {resp[0]}");
-
-        if (resp[1] == AuthUserPass && useAuth)
+        try
         {
-            await SendUserPassAuthAsync(stream, ct);
-        }
-        else if (resp[1] != AuthNone)
-        {
-            throw new InvalidOperationException($"SOCKS5 auth not supported: {resp[1]}");
-        }
+            await client.ConnectAsync(Host, Port, ct);
 
-        // CONNECT: VER(5) CMD(1) RSV(1) ATYP(1) DST.ADDR DST.PORT
-        byte[] request;
-        if (!string.IsNullOrEmpty(hostname))
-        {
-            if (hostname.Length > 255)
-                throw new ArgumentException("Hostname length must be <= 255", nameof(hostname));
-            if (!hostname.All(c => c <= 0x7F))
-                throw new ArgumentException("Hostname must contain only ASCII characters", nameof(hostname));
+            var stream = client.GetStream();
+            await NegotiateAuthAsync(stream, ct);
 
-            var hostBytes = Encoding.ASCII.GetBytes(hostname);
-            request = new byte[4 + 1 + hostBytes.Length + 2];
-            request[0] = Version;
-            request[1] = CmdConnect;
-            request[2] = 0;
-            request[3] = AtypDomain;
-            request[4] = (byte)hostBytes.Length;
-            hostBytes.CopyTo(request, 5);
-            BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(5 + hostBytes.Length), (ushort)targetPort);
-        }
-        else
-        {
-            var addrBytes = targetAddress.GetAddressBytes();
-            if (addrBytes.Length != 4)
-                throw new ArgumentException("IPv4 only", nameof(targetAddress));
+            var request = BuildConnectRequest(targetAddress, targetPort, hostname);
+            await stream.WriteAsync(request, ct);
 
-            request = new byte[4 + 4 + 2]; // 4 + addr + 2 port
-            request[0] = Version;
-            request[1] = CmdConnect;
-            request[2] = 0;
-            request[3] = AtypIPv4;
-            addrBytes.CopyTo(request, 4);
-            BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(8), (ushort)targetPort);
+            await ReadConnectReplyAsync(stream, ct);
+            return stream;
         }
-        await stream.WriteAsync(request, ct);
-
-        // Response: VER(5) REP(1) RSV(1) ATYP(1) BND.ADDR BND.PORT
-        var rep = new byte[4];
-        await ReadExactlyAsync(stream, rep, ct);
-        if (rep[0] != Version)
-            throw new InvalidOperationException($"SOCKS5 reply version mismatch: {rep[0]}");
-        if (rep[1] != 0)
-            throw new InvalidOperationException($"SOCKS5 connect failed: {rep[1]}");
-
-        if (rep[3] == AtypIPv4)
+        catch
         {
-            var bindAddr = new byte[4 + 2];
-            await ReadExactlyAsync(stream, bindAddr, ct);
+            client.Dispose();
+            throw;
         }
-        else if (rep[3] == AtypIPv6)
-        {
-            var bindAddr = new byte[16 + 2];
-            await ReadExactlyAsync(stream, bindAddr, ct);
-        }
-        else if (rep[3] == AtypDomain)
-        {
-            var len = new byte[1];
-            await ReadExactlyAsync(stream, len, ct);
-            var bindAddr = new byte[len[0] + 2];
-            await ReadExactlyAsync(stream, bindAddr, ct);
-        }
-        else
-        {
-            throw new InvalidOperationException($"SOCKS5 reply address type not supported: {rep[3]}");
-        }
-
-        return stream;
     }
 
     public async Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default)
@@ -207,6 +131,111 @@ public sealed class Socks5Client : ISocks5Client
         await ReadExactlyAsync(stream, authResp, ct);
         if (authResp[1] != 0)
             throw new InvalidOperationException("SOCKS5 username/password auth failed");
+    }
+
+    private async Task NegotiateAuthAsync(Stream stream, CancellationToken ct)
+    {
+        bool useAuth = !string.IsNullOrEmpty(Username) || !string.IsNullOrEmpty(Password);
+        var methods = useAuth ? new[] { AuthNone, AuthUserPass } : new[] { AuthNone };
+        var greeting = new byte[2 + methods.Length];
+        greeting[0] = Version;
+        greeting[1] = (byte)methods.Length;
+        Array.Copy(methods, 0, greeting, 2, methods.Length);
+        await stream.WriteAsync(greeting, ct);
+
+        var response = new byte[2];
+        await ReadExactlyAsync(stream, response, ct);
+        if (response[0] != Version)
+            throw new InvalidOperationException($"SOCKS5 version mismatch: {response[0]}");
+
+        if (response[1] == AuthUserPass && useAuth)
+        {
+            await SendUserPassAuthAsync(stream, ct);
+            return;
+        }
+
+        if (response[1] != AuthNone)
+            throw new InvalidOperationException($"SOCKS5 auth not supported: {response[1]}");
+    }
+
+    private static byte[] BuildConnectRequest(IPAddress targetAddress, int targetPort, string? hostname)
+    {
+        if (!string.IsNullOrEmpty(hostname))
+        {
+            return BuildDomainConnectRequest(targetPort, hostname);
+        }
+
+        var addrBytes = targetAddress.GetAddressBytes();
+        if (addrBytes.Length != 4)
+            throw new ArgumentException("IPv4 only", nameof(targetAddress));
+
+        var request = new byte[4 + 4 + 2];
+        request[0] = Version;
+        request[1] = CmdConnect;
+        request[2] = 0;
+        request[3] = AtypIPv4;
+        addrBytes.CopyTo(request, 4);
+        BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(8), (ushort)targetPort);
+        return request;
+    }
+
+    private static byte[] BuildDomainConnectRequest(int targetPort, string hostname)
+    {
+        if (hostname.Length > 255)
+            throw new ArgumentException("Hostname length must be <= 255", nameof(hostname));
+        if (!hostname.All(c => c <= 0x7F))
+            throw new ArgumentException("Hostname must contain only ASCII characters", nameof(hostname));
+
+        var hostBytes = Encoding.ASCII.GetBytes(hostname);
+        var request = new byte[4 + 1 + hostBytes.Length + 2];
+        request[0] = Version;
+        request[1] = CmdConnect;
+        request[2] = 0;
+        request[3] = AtypDomain;
+        request[4] = (byte)hostBytes.Length;
+        hostBytes.CopyTo(request, 5);
+        BinaryPrimitives.WriteUInt16BigEndian(request.AsSpan(5 + hostBytes.Length), (ushort)targetPort);
+        return request;
+    }
+
+    private static async Task ReadConnectReplyAsync(Stream stream, CancellationToken ct)
+    {
+        var rep = new byte[4];
+        await ReadExactlyAsync(stream, rep, ct);
+        if (rep[0] != Version)
+            throw new InvalidOperationException($"SOCKS5 reply version mismatch: {rep[0]}");
+        if (rep[1] != 0)
+            throw new InvalidOperationException($"SOCKS5 connect failed: {rep[1]}");
+
+        await ReadBindAddressAsync(stream, rep[3], ct);
+    }
+
+    private static async Task ReadBindAddressAsync(Stream stream, byte atyp, CancellationToken ct)
+    {
+        if (atyp == AtypIPv4)
+        {
+            var bindAddr = new byte[4 + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+            return;
+        }
+
+        if (atyp == AtypIPv6)
+        {
+            var bindAddr = new byte[16 + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+            return;
+        }
+
+        if (atyp == AtypDomain)
+        {
+            var len = new byte[1];
+            await ReadExactlyAsync(stream, len, ct);
+            var bindAddr = new byte[len[0] + 2];
+            await ReadExactlyAsync(stream, bindAddr, ct);
+            return;
+        }
+
+        throw new InvalidOperationException($"SOCKS5 reply address type not supported: {atyp}");
     }
 
     private static async Task ReadExactlyAsync(Stream stream, Memory<byte> buffer, CancellationToken ct)

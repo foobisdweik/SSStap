@@ -34,6 +34,7 @@ public class UdpRelayInfo : IDisposable
     public IPEndPoint RelayEndPoint { get; }
     public byte[] BindAddress { get; }
     internal TcpClient? ControlConnection { get; set; }
+    private bool _disposed;
 
     /// <summary>UDP socket used to send/receive datagrams to the SOCKS5 relay endpoint.</summary>
     public UdpClient? UdpSocket { get; set; }
@@ -46,7 +47,23 @@ public class UdpRelayInfo : IDisposable
 
     public void Dispose()
     {
-        UdpSocket?.Dispose();
-        ControlConnection?.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            UdpSocket?.Dispose();
+            UdpSocket = null;
+            ControlConnection?.Dispose();
+            ControlConnection = null;
+        }
+
+        _disposed = true;
     }
 }

@@ -17,68 +17,14 @@ public sealed class DnsInterceptCache
     /// </summary>
     public void InterceptDnsResponse(ReadOnlySpan<byte> dnsPayload)
     {
-        if (dnsPayload.Length < 12)
-            return;
-
-        var flags = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(2, 2));
-        var isResponse = (flags & 0x8000) != 0;
-        if (!isResponse)
-            return;
-
-        var questionCount = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(4, 2));
-        var answerCount = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(6, 2));
-        if (questionCount == 0 || answerCount == 0)
+        if (!TryReadResponseHeader(dnsPayload, out var questionCount, out var answerCount))
             return;
 
         var offset = 12;
-        string? hostname = null;
-        for (var i = 0; i < questionCount; i++)
-        {
-            if (!TryReadName(dnsPayload, ref offset, out var questionHostname))
-                return;
-
-            if (i == 0 && !string.IsNullOrEmpty(questionHostname))
-                hostname = questionHostname;
-
-            if (offset + 4 > dnsPayload.Length)
-                return;
-            offset += 4; // QTYPE + QCLASS
-        }
-
-        if (string.IsNullOrEmpty(hostname))
+        if (!TryReadQuestionSection(dnsPayload, questionCount, ref offset, out var hostname))
             return;
 
-        for (var i = 0; i < answerCount; i++)
-        {
-            if (!TryReadName(dnsPayload, ref offset, out _))
-                return;
-
-            if (offset + 10 > dnsPayload.Length)
-                return;
-
-            var type = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset, 2));
-            var dnsClass = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset + 2, 2));
-            var ttlSeconds = BinaryPrimitives.ReadUInt32BigEndian(dnsPayload.Slice(offset + 4, 4));
-            var rdLength = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset + 8, 2));
-            offset += 10;
-
-            if (offset + rdLength > dnsPayload.Length)
-                return;
-
-            if (dnsClass == 1)
-            {
-                if (type == 1 && rdLength == 4)
-                {
-                    CacheMapping(new IPAddress(dnsPayload.Slice(offset, 4)), hostname, ttlSeconds);
-                }
-                else if (type == 28 && rdLength == 16)
-                {
-                    CacheMapping(new IPAddress(dnsPayload.Slice(offset, 16)), hostname, ttlSeconds);
-                }
-            }
-
-            offset += rdLength;
-        }
+        ParseAnswerSection(dnsPayload, answerCount, ref offset, hostname);
     }
 
     /// <summary>
@@ -107,6 +53,114 @@ public sealed class DnsInterceptCache
         _ipToHostname[address] = new CacheEntry(hostname, expiresAt);
     }
 
+    private static bool TryReadResponseHeader(ReadOnlySpan<byte> dnsPayload, out ushort questionCount, out ushort answerCount)
+    {
+        questionCount = 0;
+        answerCount = 0;
+
+        if (dnsPayload.Length < 12)
+            return false;
+
+        var flags = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(2, 2));
+        if ((flags & 0x8000) == 0)
+            return false;
+
+        questionCount = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(4, 2));
+        answerCount = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(6, 2));
+        return questionCount > 0 && answerCount > 0;
+    }
+
+    private static bool TryReadQuestionSection(ReadOnlySpan<byte> dnsPayload, ushort questionCount, ref int offset, out string hostname)
+    {
+        hostname = string.Empty;
+
+        for (var i = 0; i < questionCount; i++)
+        {
+            if (!TryReadName(dnsPayload, ref offset, out var questionHostname))
+                return false;
+
+            if (i == 0 && !string.IsNullOrEmpty(questionHostname))
+                hostname = questionHostname;
+
+            if (!TrySkipBytes(dnsPayload, ref offset, 4))
+                return false;
+        }
+
+        return !string.IsNullOrEmpty(hostname);
+    }
+
+    private void ParseAnswerSection(ReadOnlySpan<byte> dnsPayload, ushort answerCount, ref int offset, string hostname)
+    {
+        for (var i = 0; i < answerCount; i++)
+        {
+            if (!TryReadName(dnsPayload, ref offset, out _))
+                return;
+
+            if (!TryReadAnswerRecordHeader(dnsPayload, ref offset, out var type, out var dnsClass, out var ttlSeconds, out var rdLength))
+                return;
+
+            if (offset + rdLength > dnsPayload.Length)
+                return;
+
+            TryCacheAnswer(dnsPayload.Slice(offset, rdLength), hostname, type, dnsClass, ttlSeconds, rdLength);
+            offset += rdLength;
+        }
+    }
+
+    private static bool TryReadAnswerRecordHeader(
+        ReadOnlySpan<byte> dnsPayload,
+        ref int offset,
+        out ushort type,
+        out ushort dnsClass,
+        out uint ttlSeconds,
+        out ushort rdLength)
+    {
+        type = 0;
+        dnsClass = 0;
+        ttlSeconds = 0;
+        rdLength = 0;
+
+        if (offset + 10 > dnsPayload.Length)
+            return false;
+
+        type = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset, 2));
+        dnsClass = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset + 2, 2));
+        ttlSeconds = BinaryPrimitives.ReadUInt32BigEndian(dnsPayload.Slice(offset + 4, 4));
+        rdLength = BinaryPrimitives.ReadUInt16BigEndian(dnsPayload.Slice(offset + 8, 2));
+        offset += 10;
+        return true;
+    }
+
+    private void TryCacheAnswer(
+        ReadOnlySpan<byte> rdata,
+        string hostname,
+        ushort type,
+        ushort dnsClass,
+        uint ttlSeconds,
+        ushort rdLength)
+    {
+        if (dnsClass != 1)
+            return;
+
+        if (type == 1 && rdLength == 4)
+        {
+            CacheMapping(new IPAddress(rdata), hostname, ttlSeconds);
+            return;
+        }
+
+        if (type == 28 && rdLength == 16)
+            CacheMapping(new IPAddress(rdata), hostname, ttlSeconds);
+    }
+
+    private static bool TrySkipBytes(ReadOnlySpan<byte> payload, ref int offset, int count)
+    {
+        if (offset + count > payload.Length)
+            return false;
+
+        offset += count;
+        return true;
+    }
+
     private static bool TryReadName(ReadOnlySpan<byte> payload, ref int offset, out string name)
     {
         name = string.Empty;
@@ -116,63 +170,114 @@ public sealed class DnsInterceptCache
         var current = offset;
         var consumedOffset = offset;
         var jumped = false;
-        var jumps = 0;
+        var remainingJumps = payload.Length;
         var builder = new StringBuilder();
 
         while (current < payload.Length)
         {
-            var len = payload[current];
+            if (!TryConsumeNameToken(payload, ref current, ref consumedOffset, ref jumped, ref remainingJumps, builder, out var completed))
+                return false;
 
-            if ((len & 0xC0) == 0xC0)
-            {
-                if (current + 1 >= payload.Length)
-                    return false;
-
-                var pointer = ((len & 0x3F) << 8) | payload[current + 1];
-                if (pointer >= payload.Length)
-                    return false;
-
-                if (!jumped)
-                {
-                    consumedOffset = current + 2;
-                    jumped = true;
-                }
-
-                current = pointer;
-                jumps++;
-                if (jumps > payload.Length)
-                    return false;
+            if (!completed)
                 continue;
-            }
 
-            if (len == 0)
-            {
-                if (!jumped)
-                    consumedOffset = current + 1;
-
-                offset = consumedOffset;
-                name = builder.ToString();
-                return true;
-            }
-
-            if ((len & 0xC0) != 0)
-                return false;
-
-            current++;
-            if (current + len > payload.Length)
-                return false;
-
-            if (builder.Length > 0)
-                builder.Append('.');
-
-            builder.Append(Encoding.ASCII.GetString(payload.Slice(current, len)));
-            current += len;
-
-            if (!jumped)
-                consumedOffset = current;
+            offset = consumedOffset;
+            name = builder.ToString();
+            return true;
         }
 
         return false;
+    }
+
+    private static bool TryConsumeNameToken(
+        ReadOnlySpan<byte> payload,
+        ref int current,
+        ref int consumedOffset,
+        ref bool jumped,
+        ref int remainingJumps,
+        StringBuilder builder,
+        out bool completed)
+    {
+        completed = false;
+
+        if (!TryReadLabelLength(payload, current, out var len))
+            return false;
+
+        if (IsPointerLabel(len))
+            return TryFollowPointer(payload, ref current, ref consumedOffset, ref jumped, ref remainingJumps);
+
+        if (len == 0)
+        {
+            if (!jumped)
+                consumedOffset = current + 1;
+            completed = true;
+            return true;
+        }
+
+        if (!TryAppendLabel(payload, ref current, len, builder))
+            return false;
+
+        if (!jumped)
+            consumedOffset = current;
+
+        return true;
+    }
+
+    private static bool TryReadLabelLength(ReadOnlySpan<byte> payload, int current, out byte length)
+    {
+        length = 0;
+        if (current < 0 || current >= payload.Length)
+            return false;
+
+        length = payload[current];
+        return true;
+    }
+
+    private static bool IsPointerLabel(byte length) => (length & 0xC0) == 0xC0;
+
+    private static bool TryFollowPointer(
+        ReadOnlySpan<byte> payload,
+        ref int current,
+        ref int consumedOffset,
+        ref bool jumped,
+        ref int remainingJumps)
+    {
+        if (current + 1 >= payload.Length)
+            return false;
+
+        if (remainingJumps <= 0)
+            return false;
+
+        var pointer = ((payload[current] & 0x3F) << 8) | payload[current + 1];
+        if (pointer >= payload.Length)
+            return false;
+
+        if (!jumped)
+        {
+            consumedOffset = current + 2;
+            jumped = true;
+        }
+
+        current = pointer;
+        remainingJumps--;
+        return true;
+    }
+
+    private static bool TryAppendLabel(ReadOnlySpan<byte> payload, ref int current, byte length, StringBuilder builder)
+    {
+        if ((length & 0xC0) != 0)
+            return false;
+
+        current++;
+        if (current + length > payload.Length)
+            return false;
+
+        if (builder.Length > 0)
+            builder.Append('.');
+
+        builder.Append(Encoding.ASCII.GetString(payload.Slice(current, length)));
+        current += length;
+        return true;
     }
 
     private readonly record struct CacheEntry(string Hostname, DateTimeOffset ExpiresAtUtc);
