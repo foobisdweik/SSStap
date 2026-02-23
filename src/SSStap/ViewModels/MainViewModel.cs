@@ -198,11 +198,40 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             Log($"Wintun interface index: {wintunIfIndex}", LogSeverity.Info);
 
-            // Step 4 — Resolve physical adapter index (for SkipChina) ──────────
+            // Step 4 — Resolve physical adapter index ─────────────────────────
             var physicalIfIndex = AdapterSetup.GetDefaultGatewayInterfaceIndex();
             Log($"Physical (default-gateway) interface index: {physicalIfIndex?.ToString() ?? "not found"}", LogSeverity.Info);
 
-            // Step 5 — Apply routing table entries ────────────────────────────
+            // Step 5 — Resolve proxy server to an IP address ──────────────────
+            // Required to install a /32 host route on the physical adapter before
+            // the Wintun default route, preventing the routing loop where traffic
+            // to the proxy server routes through Wintun and back to itself.
+            IPAddress? proxyServerIp = null;
+            if (!IPAddress.TryParse(proxy.Server, out proxyServerIp))
+            {
+                // Proxy server specified as hostname — resolve to IP before routing setup.
+                StatusText = "Resolving proxy server address...";
+                try
+                {
+                    var addrs = await Dns.GetHostAddressesAsync(proxy.Server);
+                    proxyServerIp = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                                    ?? addrs.FirstOrDefault();
+                    if (proxyServerIp == null)
+                        Log($"Warning: could not resolve '{proxy.Server}' to an IP address — proxy host route will not be installed. Routing loop protection is inactive.", LogSeverity.Warning);
+                    else
+                        Log($"Resolved proxy server '{proxy.Server}' → {proxyServerIp}", LogSeverity.Info);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Warning: DNS resolution of '{proxy.Server}' failed ({ex.Message}) — proxy host route will not be installed. Routing loop protection is inactive.", LogSeverity.Warning);
+                }
+            }
+            else
+            {
+                Log($"Proxy server IP: {proxyServerIp}", LogSeverity.Info);
+            }
+
+            // Step 6 — Apply routing table entries ────────────────────────────
             StatusText = "Applying routes...";
             var routingMode = (RoutingMode)(int)SelectedMode; // ProxyMode values are intentionally identical to RoutingMode
             _routeManager = new RouteManager();
@@ -212,6 +241,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 routingMode,
                 wintunIfIndex.Value,
                 physicalIfIndex,
+                proxyServerIp,
                 _connectCts.Token);
 
             if (!routesOk)
@@ -223,14 +253,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             Log($"Routes applied (mode={routingMode}).", LogSeverity.Info);
 
-            // Step 6 — Build SOCKS5 client ────────────────────────────────────
+            // Step 7 — Build SOCKS5 client ────────────────────────────────────
             var socks5 = new Socks5Client(
                 proxy.Server,
                 proxy.ServerPort,
                 string.IsNullOrWhiteSpace(proxy.Username) ? null : proxy.Username,
                 string.IsNullOrWhiteSpace(proxy.Password) ? null : proxy.Password);
 
-            // Step 7 — Start tunnel engine ────────────────────────────────────
+            // Step 8 — Start tunnel engine ────────────────────────────────────
             StatusText = $"Starting tunnel to {proxy.DisplayName}...";
             var packetSource = new WintunPacketSource(session);
             _tunnelEngine = new TunnelEngine(packetSource, socks5, _routeManager, routingMode);
