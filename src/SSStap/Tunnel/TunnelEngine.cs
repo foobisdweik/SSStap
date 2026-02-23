@@ -23,7 +23,14 @@ public sealed class TunnelEngine
     private readonly ConcurrentDictionary<ConnectionKey, TcpConnectionState> _tcpConnections = new();
     private readonly ConcurrentDictionary<UdpResponseKey, UdpFlowState> _udpFlowMap = new();
     private int _udpFlowTouchCount;
-    private UdpRelayInfo? _udpRelay;
+
+    // _udpRelay is volatile so reads outside the semaphore see the latest write.
+    // All null-check-and-assign operations are serialized through _udpRelaySemaphore.
+    // Interlocked.CompareExchange is used by MonitorUdpControlConnectionAsync to
+    // atomically clear _udpRelay without re-entering the semaphore.
+    private volatile UdpRelayInfo? _udpRelay;
+    private readonly SemaphoreSlim _udpRelaySemaphore = new(1, 1);
+
     private CancellationTokenSource? _cts;
     private Task? _runTask;
 
@@ -66,7 +73,13 @@ public sealed class TunnelEngine
         _cts = null;
         _runTask = null;
 
-        _udpRelay?.Dispose();
+        // Use Interlocked.Exchange to take sole ownership before disposing,
+        // preventing a double-dispose race with MonitorUdpControlConnectionAsync.
+        var relay = Interlocked.Exchange(ref _udpRelay, null);
+        relay?.Dispose();
+
+        _udpRelaySemaphore.Dispose();
+
         foreach (var kv in _tcpConnections)
             kv.Value.Dispose();
         _tcpConnections.Clear();
@@ -119,6 +132,11 @@ public sealed class TunnelEngine
         return parsed.Transport switch
         {
             TransportProtocol.Tcp => HandleTcpAsync(parsed, packet, ct),
+            // Block QUIC (UDP/443) to force browser fallback to TCP/TLS.
+            // QUIC connection-ID tracking is not implemented; the server's 180s idle
+            // timeout would otherwise race the browser's own QUIC idle timeout.
+            // TODO: Remove this arm when QuicHandler.ForwardQuicAsync is implemented.
+            TransportProtocol.Udp when parsed.DestinationPort == 443 => Task.CompletedTask,
             TransportProtocol.Udp => HandleUdpAsync(parsed, packet, ct),
             _ => Task.CompletedTask,
         };
@@ -281,12 +299,27 @@ public sealed class TunnelEngine
             TouchUdpFlowMaintenance(now);
         }
 
-        if (_udpRelay == null)
+        // Serialize relay creation through the semaphore to prevent concurrent
+        // packets both seeing _udpRelay == null and each calling OpenUdpAssociateAsync,
+        // which would leak the first relay's TcpClient and UdpClient.
+        UdpRelayInfo relay;
+        await _udpRelaySemaphore.WaitAsync(ct);
+        try
         {
-            _udpRelay = await _socks5.OpenUdpAssociateAsync(ct);
-            _udpRelay.UdpSocket = new UdpClient();
-            _udpRelay.UdpSocket.Connect(_udpRelay.RelayEndPoint);
-            _ = ReceiveUdpFromRelayAsync(_udpRelay, ct);
+            if (_udpRelay == null)
+            {
+                var newRelay = await _socks5.OpenUdpAssociateAsync(ct);
+                newRelay.UdpSocket = new UdpClient();
+                newRelay.UdpSocket.Connect(newRelay.RelayEndPoint);
+                _udpRelay = newRelay;
+                _ = ReceiveUdpFromRelayAsync(newRelay, ct);
+                _ = MonitorUdpControlConnectionAsync(newRelay, ct);
+            }
+            relay = _udpRelay;
+        }
+        finally
+        {
+            _udpRelaySemaphore.Release();
         }
 
         // SOCKS5 UDP format: RSV(2) FRAG(1) ATYP(1) DST.ADDR DST.PORT(2) DATA
@@ -321,7 +354,58 @@ public sealed class TunnelEngine
         header.CopyTo(udpPacket, 0);
         payload.CopyTo(udpPacket.AsMemory(header.Length));
 
-        await _udpRelay.UdpSocket!.SendAsync(udpPacket, ct);
+        await relay.UdpSocket!.SendAsync(udpPacket, ct);
+    }
+
+    /// <summary>
+    /// Watches the SOCKS5 TCP control connection for EOF. The server sends a clean FIN
+    /// when the UDP association's idle timer expires. On EOF or IOException, atomically
+    /// clears _udpRelay so the next HandleUdpAsync call re-associates transparently.
+    ///
+    /// The session CancellationToken is passed into ReadAsync so this task exits cleanly
+    /// when TunnelEngine.StopAsync fires — prevents the background task outliving the
+    /// engine and holding the TcpClient/UdpClient alive after teardown.
+    /// </summary>
+    private async Task MonitorUdpControlConnectionAsync(UdpRelayInfo relay, CancellationToken ct)
+    {
+        if (relay.ControlConnection == null)
+            // TODO: If UdpRelayInfo is ever moved to a separate assembly, replace
+            // 'internal' on ControlConnection with InternalsVisibleTo on the core assembly.
+            return;
+
+        try
+        {
+            var stream = relay.ControlConnection.GetStream();
+            var buf = new byte[1];
+            while (!ct.IsCancellationRequested)
+            {
+                int n = await stream.ReadAsync(buf, ct);
+                if (n == 0)
+                    break; // Clean FIN — server closed the association
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Engine is shutting down. StopAsync will dispose the relay; nothing to do here.
+            return;
+        }
+        catch (IOException ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"UDP control connection I/O error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"UDP control monitor unexpected error: {ex.Message}");
+        }
+
+        // Atomically clear _udpRelay only if it is still the relay we were monitoring.
+        // Guards against racing with a concurrent re-association that already replaced it.
+        var prev = Interlocked.CompareExchange(ref _udpRelay, null, relay);
+        if (ReferenceEquals(prev, relay))
+        {
+            System.Diagnostics.Debug.WriteLine("UDP association expired — relay cleared, will re-associate on next packet");
+            relay.Dispose();
+        }
     }
 
     private async Task ReceiveUdpFromRelayAsync(UdpRelayInfo relay, CancellationToken ct)
