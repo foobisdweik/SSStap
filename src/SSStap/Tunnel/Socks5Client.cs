@@ -21,6 +21,12 @@ public sealed class Socks5Client(string host, int port, string? username = null,
     private const byte AuthNone = 0;
     private const byte AuthUserPass = 2;
 
+    // Deadline for the post-TCP-connect SOCKS5 handshake: auth negotiation +
+    // CONNECT request + reply read. Chosen to be shorter than the server-side
+    // 20-second non-blocking connect timeout so the client surfaces an error
+    // first and can attempt retry rather than waiting for the server RST.
+    private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(12);
+
     public string Host { get; } = host;
     public int Port { get; } = port;
     public string? Username { get; } = username;
@@ -33,13 +39,21 @@ public sealed class Socks5Client(string host, int port, string? username = null,
         {
             await client.ConnectAsync(Host, Port, ct);
 
+            // After the raw TCP connection succeeds, bound the entire SOCKS5
+            // handshake (auth + CONNECT + reply) with a hard 12-second deadline.
+            // Without this, ReadConnectReplyAsync blocks indefinitely if the proxy
+            // server stalls (e.g. during a shard freeze or slow destination connect).
+            using var timeoutCts = new CancellationTokenSource(HandshakeTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            var handshakeCt = linkedCts.Token;
+
             var stream = client.GetStream();
-            await NegotiateAuthAsync(stream, ct);
+            await NegotiateAuthAsync(stream, handshakeCt);
 
             var request = BuildConnectRequest(targetAddress, targetPort, hostname);
-            await stream.WriteAsync(request, ct);
+            await stream.WriteAsync(request, handshakeCt);
 
-            await ReadConnectReplyAsync(stream, ct);
+            await ReadConnectReplyAsync(stream, handshakeCt);
             return stream;
         }
         catch
