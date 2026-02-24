@@ -213,7 +213,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 StatusText = "Resolving proxy server address...";
                 try
                 {
-                    var addrs = await Dns.GetHostAddressesAsync(proxy.Server);
+                    var addrs = await System.Net.Dns.GetHostAddressesAsync(proxy.Server);
                     proxyServerIp = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                                     ?? addrs.FirstOrDefault();
                     if (proxyServerIp == null)
