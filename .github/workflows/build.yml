@@ -25,19 +25,18 @@ jobs:
         shell: pwsh
 
       - name: Fetch wintun.dll
+        shell: pwsh
         run: |
-          $NativeDir = "assets\native"
-          $WintunDll = "$NativeDir\wintun.dll"
-          if (-not (Test-Path $WintunDll)) {
+          $dest = "assets\native\wintun.dll"
+          if (-not (Test-Path $dest)) {
             $zip = Join-Path $env:TEMP "wintun-0.14.1.zip"
             $ext = Join-Path $env:TEMP "wintun-extract"
             Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile $zip -UseBasicParsing -TimeoutSec 120
             Expand-Archive -Path $zip -DestinationPath $ext -Force
-            $null = New-Item -ItemType Directory -Force -Path $NativeDir
-            Copy-Item "$ext\wintun\bin\amd64\wintun.dll" -Destination $WintunDll -Force
+            New-Item -ItemType Directory -Force -Path "assets\native" | Out-Null
+            Copy-Item "$ext\wintun\bin\amd64\wintun.dll" -Destination $dest -Force
             Write-Host "wintun.dll fetched OK."
           }
-        shell: pwsh
 
       - name: Restore
         run: dotnet restore src/SSStap.sln -p:WINTUN_SKIP_DOWNLOAD=1
