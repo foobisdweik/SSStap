@@ -12,6 +12,12 @@ public interface ISocks5Client
     /// <summary>Establishes a TCP connection through SOCKS5 CONNECT to the target.</summary>
     Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default);
 
+    /// <summary>Performs the initial SOCKS5 handshake (version + auth) and returns the stream ready for a CONNECT command.</summary>
+    Task<Stream> PreConnectAsync(CancellationToken ct = default);
+
+    /// <summary>Sends a CONNECT command over an already negotiated stream.</summary>
+    Task CompleteConnectAsync(Stream stream, IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default);
+
     /// <summary>Opens UDP ASSOCIATE and returns the relay endpoint for sending encapsulated UDP datagrams.</summary>
     Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default);
 }

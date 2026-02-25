@@ -14,6 +14,8 @@
         <converters:InverseBooleanConverter x:Key="InverseBool"/>
         <converters:LogSeverityToColorConverter x:Key="LogSeverityToColor"/>
         <converters:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVis"/>
+        <converters:ThermalStateToBrushConverter x:Key="ThermalStateToBrush"/>
     </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
@@ -102,7 +104,43 @@
                     <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12"/>
                 </Border>
 
-                <Grid Grid.Row="4"/>
+                <!-- Proxy Health -->
+                <StackPanel Grid.Row="4" Visibility="{Binding LastProxyStatus, Converter={StaticResource NullToVis}}" Margin="0,0,0,12">
+                    <TextBlock Text="PROXY HEALTH" Foreground="#999" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
+                    <UniformGrid Columns="2">
+                        <StackPanel Margin="0,0,4,4">
+                            <TextBlock Text="TCP Flows" FontSize="10" Foreground="#666"/>
+                            <TextBlock FontSize="12" FontWeight="SemiBold">
+                                <Run Text="{Binding LastProxyStatus.TcpActive, Mode=OneWay}"/>
+                                <Run Text="/" Foreground="#999" FontSize="10"/>
+                                <Run Text="{Binding LastProxyStatus.TcpTotal, Mode=OneWay}" Foreground="#999" FontSize="10"/>
+                            </TextBlock>
+                        </StackPanel>
+                        <StackPanel Margin="4,0,0,4">
+                            <TextBlock Text="UDP Flows" FontSize="10" Foreground="#666"/>
+                            <TextBlock FontSize="12" FontWeight="SemiBold">
+                                <Run Text="{Binding LastProxyStatus.UdpActive, Mode=OneWay}"/>
+                                <Run Text=" assoc" Foreground="#999" FontSize="10"/>
+                            </TextBlock>
+                        </StackPanel>
+                        <StackPanel Margin="0,4,4,0">
+                            <TextBlock Text="Thermal" FontSize="10" Foreground="#666"/>
+                            <Ellipse Width="8" Height="8" HorizontalAlignment="Left" Margin="0,2,0,0"
+                                     Fill="{Binding LastProxyStatus.ThermalState, Converter={StaticResource ThermalStateToBrush}}"/>
+                        </StackPanel>
+                        <StackPanel Margin="4,4,0,0">
+                            <TextBlock Text="Mem Pressure" FontSize="10" Foreground="#666"/>
+                            <Ellipse Width="8" Height="8" HorizontalAlignment="Left" Margin="0,2,0,0"
+                                     Fill="{Binding LastProxyStatus.MemoryPressure, Converter={StaticResource ThermalStateToBrush}}"/>
+                        </StackPanel>
+                    </UniformGrid>
+                    
+                    <Border Background="#FFE0E0" BorderBrush="#FFCDD2" BorderThickness="1" CornerRadius="4" 
+                            Padding="8,4" Margin="0,8,0,0"
+                            Visibility="{Binding IsThrottled, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="THROTTLED: SERVER OVERHEAT" Foreground="#D32F2F" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    </Border>
+                </StackPanel>
                 <!-- Footer -->
                 <Border Grid.Row="5" Background="#F0F0F0" Padding="8,6">
                     <TextBlock Text="SSStap - Modern replacement for SSTap" Foreground="#666" FontSize="10"/>

@@ -34,26 +34,33 @@ public sealed class Socks5Client(string host, int port, string? username = null,
 
     public async Task<Stream> ConnectTcpAsync(IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default)
     {
+        var stream = await PreConnectAsync(ct);
+        try
+        {
+            await CompleteConnectAsync(stream, targetAddress, targetPort, hostname, ct);
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    public async Task<Stream> PreConnectAsync(CancellationToken ct = default)
+    {
         var client = new TcpClient();
         try
         {
             await client.ConnectAsync(Host, Port, ct);
+            QosHelper.ApplyTcpQos(client.Client);
 
-            // After the raw TCP connection succeeds, bound the entire SOCKS5
-            // handshake (auth + CONNECT + reply) with a hard 12-second deadline.
-            // Without this, ReadConnectReplyAsync blocks indefinitely if the proxy
-            // server stalls (e.g. during a shard freeze or slow destination connect).
             using var timeoutCts = new CancellationTokenSource(HandshakeTimeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
             var handshakeCt = linkedCts.Token;
 
             var stream = client.GetStream();
             await NegotiateAuthAsync(stream, handshakeCt);
-
-            var request = BuildConnectRequest(targetAddress, targetPort, hostname);
-            await stream.WriteAsync(request, handshakeCt);
-
-            await ReadConnectReplyAsync(stream, handshakeCt);
             return stream;
         }
         catch
@@ -63,10 +70,24 @@ public sealed class Socks5Client(string host, int port, string? username = null,
         }
     }
 
+    public async Task CompleteConnectAsync(Stream stream, IPAddress targetAddress, int targetPort, string? hostname = null, CancellationToken ct = default)
+    {
+        using var timeoutCts = new CancellationTokenSource(HandshakeTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        var handshakeCt = linkedCts.Token;
+
+        var request = BuildConnectRequest(targetAddress, targetPort, hostname);
+        await stream.WriteAsync(request, handshakeCt);
+
+        await ReadConnectReplyAsync(stream, handshakeCt);
+    }
+
     public async Task<UdpRelayInfo> OpenUdpAssociateAsync(CancellationToken ct = default)
     {
         var client = new TcpClient();
         await client.ConnectAsync(Host, Port, ct);
+        QosHelper.ApplyTcpQos(client.Client);
+
         var stream = client.GetStream();
 
         var methods = !string.IsNullOrEmpty(Username) || !string.IsNullOrEmpty(Password)

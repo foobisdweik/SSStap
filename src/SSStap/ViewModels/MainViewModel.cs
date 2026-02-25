@@ -20,6 +20,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private WintunSession? _wintunSession;
     private RouteManager? _routeManager;
     private TunnelEngine? _tunnelEngine;
+    private ProxyHealthMonitor? _healthMonitor;
     private CancellationTokenSource? _connectCts;
 
     private CancellationTokenSource? _testCts;
@@ -32,6 +33,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _statusText = "Ready";
     [ObservableProperty] private bool _isTestRunning;
+    [ObservableProperty] private bool _isThrottled;
+    [ObservableProperty] private ProxyStatus? _lastProxyStatus;
     [ObservableProperty] private ObservableCollection<LogEntry> _logEntries = new();
 
     public MainViewModel()
@@ -266,6 +269,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _tunnelEngine = new TunnelEngine(packetSource, socks5, _routeManager, routingMode);
             _tunnelEngine.Start();
 
+            // Step 9 — Start health monitor (Finding 9) ───────────────────────
+            _healthMonitor = new ProxyHealthMonitor(proxy.Server, _tunnelEngine);
+            _healthMonitor.StatusUpdated += status =>
+            {
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    LastProxyStatus = status;
+                    IsThrottled = status.ThermalState >= 2;
+                });
+            };
+
             IsConnected = true;
             StatusText = $"Connected — {proxy.DisplayName}";
             Log($"Tunnel running. Proxy: {proxy.Server}:{proxy.ServerPort}", LogSeverity.Info);
@@ -304,6 +318,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task TearDownAsync()
     {
         _connectCts?.Cancel();
+
+        _healthMonitor?.Dispose();
+        _healthMonitor = null;
+        LastProxyStatus = null;
 
         if (_tunnelEngine != null)
         {

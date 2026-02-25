@@ -18,6 +18,7 @@ public sealed class TunnelEngine
 
     private readonly IPacketSource _packetSource;
     private readonly ISocks5Client _socks5;
+    private readonly Socks5ConnectionPool _socksPool;
     private readonly RouteManager _routeManager;
     private readonly DnsInterceptCache _dnsInterceptCache = new();
     private readonly ConcurrentDictionary<ConnectionKey, TcpConnectionState> _tcpConnections = new();
@@ -31,6 +32,12 @@ public sealed class TunnelEngine
     private volatile UdpRelayInfo? _udpRelay;
     private readonly SemaphoreSlim _udpRelaySemaphore = new(1, 1);
 
+    /// <summary>
+    /// If true, the engine will drop new TCP/UDP flows to reduce load on the proxy server.
+    /// Typically set by ProxyHealthMonitor when server thermalState >= serious (2).
+    /// </summary>
+    public bool IsThrottled { get; set; }
+
     private CancellationTokenSource? _cts;
     private Task? _runTask;
 
@@ -42,6 +49,7 @@ public sealed class TunnelEngine
     {
         _packetSource = packetSource;
         _socks5 = socks5;
+        _socksPool = new Socks5ConnectionPool(socks5);
         _routeManager = routeManager;
         _ = routingMode;
     }
@@ -79,10 +87,38 @@ public sealed class TunnelEngine
         relay?.Dispose();
 
         _udpRelaySemaphore.Dispose();
+        _socksPool.Dispose();
 
-        foreach (var kv in _tcpConnections)
-            kv.Value.Dispose();
+        await FlushAllConnectionsAsync();
+    }
+
+    /// <summary>
+    /// Tears down all active TCP and UDP flows and clears internal maps.
+    /// Sends TCP RST to the local OS for every active TCP connection.
+    /// </summary>
+    public async Task FlushAllConnectionsAsync()
+    {
+        System.Diagnostics.Debug.WriteLine("TunnelEngine: Flushing all connections");
+
+        // Clear UDP relay
+        var relay = Interlocked.Exchange(ref _udpRelay, null);
+        relay?.Dispose();
+
+        // Send RST for every TCP connection and dispose
+        var connections = _tcpConnections.ToArray();
         _tcpConnections.Clear();
+        foreach (var kv in connections)
+        {
+            var key = kv.Key;
+            var state = kv.Value;
+            try
+            {
+                await TrySendTcpControlPacketAsync(key, state, TcpControlBits.Rst | TcpControlBits.Ack, CancellationToken.None);
+            }
+            catch { /* best effort */ }
+            state.Dispose();
+        }
+
         _udpFlowMap.Clear();
     }
 
@@ -148,12 +184,24 @@ public sealed class TunnelEngine
             parsed.SourceAddress, parsed.SourcePort,
             parsed.DestinationAddress, parsed.DestinationPort);
 
-        var state = _tcpConnections.GetOrAdd(key, k =>
+        if (!_tcpConnections.TryGetValue(key, out var state))
         {
-            var s = new TcpConnectionState();
-            _ = EstablishTcpConnectionAsync(k, s, ct);
-            return s;
-        });
+            if (IsThrottled)
+            {
+                // Proxy is under high thermal pressure; reject new flows.
+                var tempState = new TcpConnectionState();
+                tempState.ObserveClientPacket(parsed);
+                await TrySendTcpControlPacketAsync(key, tempState, TcpControlBits.Rst | TcpControlBits.Ack, ct);
+                return;
+            }
+
+            state = _tcpConnections.GetOrAdd(key, k =>
+            {
+                var s = new TcpConnectionState();
+                _ = EstablishTcpConnectionAsync(k, s, ct);
+                return s;
+            });
+        }
 
         state.ObserveClientPacket(parsed);
 
@@ -184,7 +232,11 @@ public sealed class TunnelEngine
         try
         {
             _dnsInterceptCache.TryGetHostname(key.DestAddress, out var hostname);
-            var stream = await _socks5.ConnectTcpAsync(key.DestAddress, key.DestPort, hostname, ct);
+            
+            // Use pooled stream to avoid handshake RTT (Finding 1)
+            var stream = await _socksPool.GetPooledStreamAsync(ct);
+            await _socks5.CompleteConnectAsync(stream, key.DestAddress, key.DestPort, hostname, ct);
+            
             state.SetStream(stream);
 
             // Start read loop: proxy -> Wintun
@@ -308,9 +360,17 @@ public sealed class TunnelEngine
         {
             if (_udpRelay == null)
             {
+                if (IsThrottled)
+                {
+                    // Proxy is under high thermal pressure; reject new associations.
+                    return;
+                }
+
                 var newRelay = await _socks5.OpenUdpAssociateAsync(ct);
                 newRelay.UdpSocket = new UdpClient();
                 newRelay.UdpSocket.Connect(newRelay.RelayEndPoint);
+                QosHelper.ApplyUdpQos(newRelay.UdpSocket.Client);
+
                 _udpRelay = newRelay;
                 _ = ReceiveUdpFromRelayAsync(newRelay, ct);
                 _ = MonitorUdpControlConnectionAsync(newRelay, ct);
@@ -324,29 +384,45 @@ public sealed class TunnelEngine
 
         // SOCKS5 UDP format: RSV(2) FRAG(1) ATYP(1) DST.ADDR DST.PORT(2) DATA
         var payload = packet.Slice(parsed.PayloadOffset, parsed.PayloadLength);
-        var destinationBytes = parsed.DestinationAddress.GetAddressBytes();
         byte atyp;
         byte[] header;
 
-        if (destinationBytes.Length == 4)
+        if (_dnsInterceptCache.TryGetHostname(parsed.DestinationAddress, out var hostname) &&
+            hostname.Length <= 255 &&
+            hostname.All(c => c <= 0x7F))
         {
-            atyp = 1;
-            header = new byte[10];
-            destinationBytes.CopyTo(header, 4);
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(8), parsed.DestinationPort);
-        }
-        else if (destinationBytes.Length == 16)
-        {
-            atyp = 4;
-            header = new byte[22];
-            destinationBytes.CopyTo(header, 4);
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(20), parsed.DestinationPort);
+            atyp = 3;
+            var hostBytes = System.Text.Encoding.ASCII.GetBytes(hostname);
+            header = new byte[4 + 1 + hostBytes.Length + 2];
+            header[4] = (byte)hostBytes.Length;
+            hostBytes.CopyTo(header, 5);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(5 + hostBytes.Length), parsed.DestinationPort);
         }
         else
         {
-            return;
+            var destinationBytes = parsed.DestinationAddress.GetAddressBytes();
+            if (destinationBytes.Length == 4)
+            {
+                atyp = 1;
+                header = new byte[10];
+                destinationBytes.CopyTo(header, 4);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(8), parsed.DestinationPort);
+            }
+            else if (destinationBytes.Length == 16)
+            {
+                atyp = 4;
+                header = new byte[22];
+                destinationBytes.CopyTo(header, 4);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(20), parsed.DestinationPort);
+            }
+            else
+            {
+                return;
+            }
         }
 
+        header[0] = 0; // RSV
+        header[1] = 0; // RSV
         header[2] = 0; // FRAG
         header[3] = atyp;
 
