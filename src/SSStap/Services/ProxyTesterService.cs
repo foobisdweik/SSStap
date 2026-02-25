@@ -12,7 +12,7 @@ namespace SSStap.Services;
 
 public record LogEntry(string Timestamp, string Message, LogSeverity Severity);
 
-public enum LogSeverity { Info, Warning, Success, Error, Section }
+public enum LogSeverity { Info, Success, Warning, Error, Section }
 
 /// <summary>
 /// Tests proxy connectivity via SOCKS5 (TCP + UDP) and optionally direct multi-protocol ping.

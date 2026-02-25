@@ -37,3 +37,6 @@ assets/native/*.dll
 # OS
 Thumbs.db
 .DS_Store
+
+.gemini/
+gha-creds-*.json
