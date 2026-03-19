@@ -81,3 +81,24 @@ if ($Iscc -and (Test-Path $IssPath)) {
         Write-Host "Created portable zip: $ZipPath" -ForegroundColor Green
     }
 }
+# Inside scripts/build-release.ps1
+Write-Host "--- Building Hybrid SSStap Binary ---" -ForegroundColor Cyan
+
+# 1. Compile the high-performance native core
+rtk-g dotnet publish -c Release -r win-x64 --self-contained
+
+$TargetExe = "src\SSStap\bin\Release\net8.0-windows\win-x64\publish\SSStap.exe"
+$PayloadDir = "C:\Users\Foobis\Source\Source-Mirror\SSStap"
+
+# 2. Grab the "Layman-Readable" EDN from the Mirror
+if (Test-Path $PayloadDir) {
+    $ednBlocks = Get-ChildItem -Path $PayloadDir -Recurse -Filter "*.edn" | Get-Content -Raw
+    $FinalPayload = "[$($ednBlocks -join "`n ")]"
+    
+    # 3. Staple the EDN to the tail of the .exe
+    $Marker = "`n___EDN_PAYLOAD___`n"
+    Add-Content -Path $TargetExe -Value $Marker -NoNewline
+    Add-Content -Path $TargetExe -Value $FinalPayload -NoNewline
+    
+    Write-Host "[✓] EDN Payload Stapled to Native Binary." -ForegroundColor Green
+}

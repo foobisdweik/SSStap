@@ -44,26 +44,26 @@ public class ProxyTesterService
         var stats = new[] { ("TCP (1.1.1.1)", false, 0L), ("TCP (httpbin.org)", false, 0L), ("UDP (8.8.8.8:53)", false, 0L) };
 
         // --- TCP Test 1: 1.1.1.1:80 (bypasses DNS) ---
-        progress.Report(new LogEntry(Ts(), "\n--- TCP Test 1: 1.1.1.1:80 (bypasses DNS) ---", LogSeverity.Info));
+        progress.Report(new LogEntry(Ts(), "\\n--- TCP Test 1: 1.1.1.1:80 (bypasses DNS) ---", LogSeverity.Info));
         var (ok1, ms1) = await TestTcpFlowAsync(proxyHost, proxyPort, username, password,
             targetHost: null, targetAddr: IPAddress.Parse("1.1.1.1"), 80,
             progress, Ts, ct);
         stats[0] = ("TCP (1.1.1.1)", ok1, ms1);
 
         // --- TCP Test 2: httpbin.org:80 (domain name) ---
-        progress.Report(new LogEntry(Ts(), "\n--- TCP Test 2: httpbin.org:80 (domain) ---", LogSeverity.Info));
+        progress.Report(new LogEntry(Ts(), "\\n--- TCP Test 2: httpbin.org:80 (domain) ---", LogSeverity.Info));
         var (ok2, ms2) = await TestTcpFlowAsync(proxyHost, proxyPort, username, password,
             targetHost: "httpbin.org", targetAddr: null, 80,
             progress, Ts, ct);
         stats[1] = ("TCP (httpbin.org)", ok2, ms2);
 
         // --- UDP Test: DNS to 8.8.8.8:53 ---
-        progress.Report(new LogEntry(Ts(), "\n--- UDP Test (DNS to 8.8.8.8:53) ---", LogSeverity.Info));
+        progress.Report(new LogEntry(Ts(), "\\n--- UDP Test (DNS to 8.8.8.8:53) ---", LogSeverity.Info));
         var (ok3, ms3) = await TestUdpFlowAsync(proxyHost, proxyPort, username, password, progress, Ts, ct);
         stats[2] = ("UDP (8.8.8.8:53)", ok3, ms3);
 
         // --- Summary ---
-        progress.Report(new LogEntry(Ts(), "\n--- Summary ---", LogSeverity.Section));
+        progress.Report(new LogEntry(Ts(), "\\n--- Summary ---", LogSeverity.Section));
         foreach (var (name, ok, ms) in stats)
         {
             var status = ok ? $"[+] {ms}ms" : "[-] Failed";
@@ -156,7 +156,7 @@ public class ProxyTesterService
 
             // HTTP request
             var hostHeader = targetHost ?? displayTarget;
-            var httpReq = Encoding.ASCII.GetBytes($"GET / HTTP/1.1\r\nHost: {hostHeader}\r\nConnection: close\r\n\r\n");
+            var httpReq = Encoding.ASCII.GetBytes($"GET / HTTP/1.1\\r\\nHost: {hostHeader}\\r\\nConnection: close\\r\\n\\r\\n");
             await stream.WriteAsync(httpReq, ct);
 
             var buffer = new byte[4096];

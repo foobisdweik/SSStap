@@ -26,7 +26,7 @@ public sealed class SimpleHttpProxyShim : IDisposable
 
     public SimpleHttpProxyShim(
         int listenPort = 25378,
-        string socksHost = "127.0.0.1",
+        string socksHost = "\27.0.0.1"\
         int socksPort = 16666)
     {
         ListenPort = listenPort;
@@ -37,12 +37,12 @@ public sealed class SimpleHttpProxyShim : IDisposable
     public void Start()
     {
         if (IsRunning)
-            throw new InvalidOperationException("HTTP proxy shim is already running.");
+            throw new InvalidOperationException("\TTP proxy shim is already running."\;
 
         _cts = new CancellationTokenSource();
         _listener = new TcpListener(IPAddress.Loopback, ListenPort);
         _listener.Start();
-        Log($"Listening on 127.0.0.1:{ListenPort}, forwarding via SOCKS5 to {SocksHost}:{SocksPort}");
+        Log($"\istening on 127.0.0.1:{ListenPort}, forwarding via SOCKS5 to {SocksHost}:{SocksPort}"\;
 
         _acceptLoop = RunAcceptLoopAsync(_cts.Token);
     }
@@ -88,7 +88,7 @@ public sealed class SimpleHttpProxyShim : IDisposable
             catch (ObjectDisposedException) { break; }
             catch (Exception ex)
             {
-                Log($"Accept error: {ex.Message}");
+                Log($"\ccept error: {ex.Message}"\;
             }
         }
     }
@@ -107,10 +107,10 @@ public sealed class SimpleHttpProxyShim : IDisposable
                 string request = Encoding.ASCII.GetString(buffer, 0, received);
 
                 // Parse HTTP request line (METHOD URL HTTP/x.x)
-                var match = Regex.Match(request, @"^(CONNECT|GET|POST|PUT|DELETE|HEAD|PATCH)\\s+(\\S+)\\s+HTTP/[\\d.]+", RegexOptions.IgnoreCase);
+                var match = Regex.Match(request, @"\(CONNECT|GET|POST|PUT|DELETE|HEAD|PATCH)\\\\s+(\\\\S+)\\\\s+HTTP/[\\\\d.]+"\ RegexOptions.IgnoreCase);
                 if (!match.Success)
                 {
-                    await SendErrorResponseAsync(clientStream, 400, "Bad Request").ConfigureAwait(false);
+                    await SendErrorResponseAsync(clientStream, 400, "\ad Request"\.ConfigureAwait(false);
                     return;
                 }
 
@@ -120,13 +120,13 @@ public sealed class SimpleHttpProxyShim : IDisposable
                 string host;
                 int port;
 
-                if (method == "CONNECT")
+                if (method == "\ONNECT"\
                 {
                     // CONNECT host:port HTTP/1.1
-                    var hostMatch = Regex.Match(url, @"^([^:]+):(\\d+)$");
+                    var hostMatch = Regex.Match(url, @"\([^:]+):(\\\\d+)$"\;
                     if (!hostMatch.Success)
                     {
-                        await SendErrorResponseAsync(clientStream, 400, "Bad Request").ConfigureAwait(false);
+                        await SendErrorResponseAsync(clientStream, 400, "\ad Request"\.ConfigureAwait(false);
                         return;
                     }
                     host = hostMatch.Groups[1].Value;
@@ -135,10 +135,10 @@ public sealed class SimpleHttpProxyShim : IDisposable
                 else
                 {
                     // GET http://host[:port]/path HTTP/1.1
-                    if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-                        url = url["http://".Length..];
-                    else if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                        url = url["https://".Length..];
+                    if (url.StartsWith("\ttp://"\ StringComparison.OrdinalIgnoreCase))
+                        url = url["\ttp://"\Length..];
+                    else if (url.StartsWith("\ttps://"\ StringComparison.OrdinalIgnoreCase))
+                        url = url["\ttps://"\Length..];
 
                     int slash = url.IndexOf('/');
                     string authority = slash >= 0 ? url[..slash] : url;
@@ -151,14 +151,14 @@ public sealed class SimpleHttpProxyShim : IDisposable
                 var socksConn = await ConnectViaSocks5Async(host, port, ct).ConfigureAwait(false);
                 if (socksConn is null)
                 {
-                    await SendErrorResponseAsync(clientStream, 502, "Bad Gateway (SOCKS5 failed)").ConfigureAwait(false);
+                    await SendErrorResponseAsync(clientStream, 502, "\ad Gateway (SOCKS5 failed)"\.ConfigureAwait(false);
                     return;
                 }
 
                 using (socksConn.Value.client)
                 {
                     var socksStream = socksConn.Value.stream;
-                    if (method == "CONNECT")
+                    if (method == "\ONNECT"\
                     {
                         // Tunnel: send 200 Connection established, then bidirectional relay
                         await SendConnectOkAsync(clientStream).ConfigureAwait(false);
@@ -175,7 +175,7 @@ public sealed class SimpleHttpProxyShim : IDisposable
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                Log($"Client error: {ex.Message}");
+                Log($"\lient error: {ex.Message}"\;
             }
         }
     }
@@ -227,14 +227,14 @@ public sealed class SimpleHttpProxyShim : IDisposable
 
     private static async Task SendConnectOkAsync(Stream clientStream)
     {
-        const string response = "HTTP/1.1 200 Connection Established\\r\\n\\r\\n";
+        const string response = "\TTP/1.1 200 Connection Established\\\\r\\\\n\\\\r\\\\n"\
         await clientStream.WriteAsync(Encoding.ASCII.GetBytes(response)).ConfigureAwait(false);
     }
 
     private static async Task SendErrorResponseAsync(Stream clientStream, int code, string message)
     {
-        string body = $"<html><body><h1>{code} {message}</h1></body></html>";
-        string response = $"HTTP/1.1 {code} {message}\\r\\nContent-Length: {body.Length}\\r\\n\\r\\n{body}";
+        string body = $"\html><body><h1>{code} {message}</h1></body></html>"\
+        string response = $"\TTP/1.1 {code} {message}\\\\r\\\\nContent-Length: {body.Length}\\\\r\\\\n\\\\r\\\\n{body}"\
         await clientStream.WriteAsync(Encoding.ASCII.GetBytes(response)).ConfigureAwait(false);
     }
 

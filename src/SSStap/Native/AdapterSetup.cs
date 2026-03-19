@@ -70,9 +70,35 @@ public static partial class AdapterSetup
     [LibraryImport(DllName)]
     private static partial uint DeleteUnicastIpAddressEntry(in MibUnicastIpAddressRow row);
 
+    [LibraryImport(DllName)]
+    private static partial uint ConvertInterfaceGuidToLuid(ref Guid interfaceGuid, out ulong interfaceLuid);
+
+    /// <summary>
+    /// Resolves the interface index directly from a NET_LUID using ConvertInterfaceLuidToIndex.
+    /// This is a kernel-level call that succeeds immediately after WintunCreateAdapter returns,
+    /// unlike the NetworkInterface managed API which has a registration timing race.
+    /// </summary>
+    [LibraryImport(DllName)]
+    private static partial uint ConvertInterfaceLuidToIndex(ref ulong interfaceLuid, out uint interfaceIndex);
+
+    /// <summary>
+    /// Returns the interface index for a Wintun adapter via its NET_LUID.
+    /// Preferred over GetInterfaceIndexByAdapterName — no timing race against
+    /// the .NET NetworkInterface stack registering the new adapter.
+    /// </summary>
+    public static uint? GetInterfaceIndexByLuid(Wintun.NetLuid luid)
+    {
+        if (luid.Value == 0) return null;
+        var v = luid.Value;
+        uint err = ConvertInterfaceLuidToIndex(ref v, out uint index);
+        return err == 0 ? index : (uint?)null;
+    }
+
     /// <summary>
     /// Assigns an IPv4 address to the adapter identified by LUID.
     /// Uses <c>CreateUnicastIpAddressEntry</c> (the API Wintun documentation recommends).
+    /// Retries up to 6 times on transient error codes 87/1168 that occur during the
+    /// brief window between adapter creation and full IP stack registration.
     /// Requires administrator privileges.
     /// </summary>
     public static IpAddressContext? SetAdapterIp(IPAddress address, IPAddress subnetMask, Wintun.NetLuid luid)
@@ -101,7 +127,18 @@ public static partial class AdapterSetup
             PreferredLifetime  = InfiniteLifetime,
         };
 
-        uint err = CreateUnicastIpAddressEntry(in row);
+        // Retry on error 87 (ERROR_INVALID_PARAMETER) and 1168 (ERROR_NOT_FOUND).
+        // Both occur transiently while the adapter is completing registration in the
+        // IP stack. 150 ms × 6 attempts = 900 ms worst case, well within user tolerance.
+        uint err = 0;
+        for (int attempt = 0; attempt < 6; attempt++)
+        {
+            err = CreateUnicastIpAddressEntry(in row);
+            if (err == 0) break;
+            if (err != 87 && err != 1168) break;
+            System.Threading.Thread.Sleep(150);
+        }
+
         if (err != 0)
         {
             System.Diagnostics.Debug.WriteLine($"[AdapterSetup] CreateUnicastIpAddressEntry failed: {err}");
@@ -155,12 +192,10 @@ public static partial class AdapterSetup
         return null;
     }
 
-    [LibraryImport(DllName)]
-    private static partial uint ConvertInterfaceGuidToLuid(ref Guid interfaceGuid, out ulong interfaceLuid);
-
     /// <summary>
     /// Returns the interface index for an adapter whose Name or Description contains
-    /// <paramref name="adapterName"/>. Used by RouteManager for route installation.
+    /// <paramref name="adapterName"/>. Fallback for GetInterfaceIndexByLuid when LUID
+    /// is unavailable. Subject to NetworkInterface registration timing — prefer LUID path.
     /// </summary>
     public static uint? GetInterfaceIndexByAdapterName(string adapterName)
     {

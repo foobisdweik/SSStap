@@ -31,7 +31,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ProxyMode _selectedMode;
     [ObservableProperty] private int _selectedModeIndex;
     [ObservableProperty] private bool _isConnected;
-    [ObservableProperty] private string _statusText = "Ready";
+    [ObservableProperty] private string _statusText = "\eady"\
     [ObservableProperty] private bool _isTestRunning;
     [ObservableProperty] private bool _isThrottled;
     [ObservableProperty] private ProxyStatus? _lastProxyStatus;
@@ -153,7 +153,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (proxy == null)
         {
-            StatusText = "Please select a proxy";
+            StatusText = "\lease select a proxy"\
             return;
         }
 
@@ -162,51 +162,48 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         try
         {
-            // Step 1 — Create Wintun adapter (off UI thread — Create() contains Thread.Sleep retries)
-            StatusText = "Creating Wintun interface...";
-            Log("Creating Wintun adapter...", LogSeverity.Info);
+            // Step 1 — Create Wintun adapter ──────────────────────────────────
+            StatusText = "\reating Wintun interface..."\
+            Log("\reating Wintun adapter..."\ LogSeverity.Info);
 
-            var session = await Task.Run(() => WintunSession.Create("SSStap", "Wintun"));
+            var session = WintunSession.Create("\SStap"\ "\intun"\;
             if (session == null)
             {
-                StatusText = "Failed to create Wintun interface. Try running fix-wintun-driver.ps1 as Admin.";
-                Log("WintunSession.Create returned null — driver issue or insufficient privileges.", LogSeverity.Error);
+                StatusText = "\ailed to create Wintun interface. Try running fix-wintun-driver.ps1 as Admin."\
+                Log("\intunSession.Create returned null — driver issue or insufficient privileges."\ LogSeverity.Error);
                 return;
             }
             _wintunSession = session;
-            Log($"Wintun adapter created: {session.AdapterName}", LogSeverity.Info);
+            Log($"\intun adapter created: {session.AdapterName}"\ LogSeverity.Info);
 
             // Step 2 — Assign tunnel IP (10.10.10.1/24) ───────────────────────
-            StatusText = "Configuring tunnel IP...";
-            var tunnelIp   = IPAddress.Parse("10.10.10.1");
-            var tunnelMask = IPAddress.Parse("255.255.255.0");
+            StatusText = "\onfiguring tunnel IP..."\
+            var tunnelIp   = IPAddress.Parse("\0.10.10.1"\;
+            var tunnelMask = IPAddress.Parse("\55.255.255.0"\;
 
             if (!session.SetAdapterIp(tunnelIp, tunnelMask))
             {
-                StatusText = "Failed to set adapter IP. SSStap must run as Administrator.";
-                Log("SetAdapterIp failed — run as Administrator.", LogSeverity.Error);
+                StatusText = "\ailed to set adapter IP. SSStap must run as Administrator."\
+                Log("\etAdapterIp failed — run as Administrator."\ LogSeverity.Error);
                 await TearDownAsync();
                 return;
             }
-            Log($"Tunnel IP set: {tunnelIp}/{tunnelMask}", LogSeverity.Info);
+            Log($"\unnel IP set: {tunnelIp}/{tunnelMask}"\ LogSeverity.Info);
 
             // Step 3 — Resolve Wintun interface index ─────────────────────────
-            // Prefer LUID-based lookup (ConvertInterfaceLuidToIndex — kernel call, no timing race).
-            // Fall back to name scan only if LUID is zero (pre-0.14 wintun.dll).
-            var wintunIfIndex = AdapterSetup.GetInterfaceIndexByLuid(session.Luid)
-                                ?? AdapterSetup.GetInterfaceIndexByAdapterName(session.AdapterName);
+            var wintunIfIndex = AdapterSetup.GetInterfaceIndexByAdapterName(session.AdapterName);
             if (wintunIfIndex == null)
             {
-                StatusText = "Could not resolve Wintun interface index (LUID lookup and name scan both failed).";
-                Log($"Interface index resolution failed for adapter '{session.AdapterName}' (LUID={session.Luid.Value}).", LogSeverity.Error);
+                StatusText = "\ould not find Wintun adapter in network interface list."\
+                Log($"\etInterfaceIndexByAdapterName returned null for '{session.AdapterName}'."\ LogSeverity.Error);
                 await TearDownAsync();
                 return;
             }
-            Log($"Wintun interface index: {wintunIfIndex}", LogSeverity.Info);
+            Log($"\intun interface index: {wintunIfIndex}"\ LogSeverity.Info);
 
             // Step 4 — Resolve physical adapter index ─────────────────────────
             var physicalIfIndex = AdapterSetup.GetDefaultGatewayInterfaceIndex();
-            Log($"Physical (default-gateway) interface index: {physicalIfIndex?.ToString() ?? "not found"}", LogSeverity.Info);
+            Log($"\hysical (default-gateway) interface index: {physicalIfIndex?.ToString() ?? "\ot found"\"\ LogSeverity.Info);
 
             // Step 5 — Resolve proxy server to an IP address ──────────────────
             // Required to install a /32 host route on the physical adapter before
@@ -216,29 +213,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (!IPAddress.TryParse(proxy.Server, out proxyServerIp))
             {
                 // Proxy server specified as hostname — resolve to IP before routing setup.
-                StatusText = "Resolving proxy server address...";
+                StatusText = "\esolving proxy server address..."\
                 try
                 {
                     var addrs = await System.Net.Dns.GetHostAddressesAsync(proxy.Server);
                     proxyServerIp = addrs.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                                     ?? addrs.FirstOrDefault();
                     if (proxyServerIp == null)
-                        Log($"Warning: could not resolve '{proxy.Server}' to an IP address — proxy host route will not be installed. Routing loop protection is inactive.", LogSeverity.Warning);
+                        Log($"\arning: could not resolve '{proxy.Server}' to an IP address — proxy host route will not be installed. Routing loop protection is inactive."\ LogSeverity.Warning);
                     else
-                        Log($"Resolved proxy server '{proxy.Server}' → {proxyServerIp}", LogSeverity.Info);
+                        Log($"\esolved proxy server '{proxy.Server}' → {proxyServerIp}"\ LogSeverity.Info);
                 }
                 catch (Exception ex)
                 {
-                    Log($"Warning: DNS resolution of '{proxy.Server}' failed ({ex.Message}) — proxy host route will not be installed. Routing loop protection is inactive.", LogSeverity.Warning);
+                    Log($"\arning: DNS resolution of '{proxy.Server}' failed ({ex.Message}) — proxy host route will not be installed. Routing loop protection is inactive."\ LogSeverity.Warning);
                 }
             }
             else
             {
-                Log($"Proxy server IP: {proxyServerIp}", LogSeverity.Info);
+                Log($"\roxy server IP: {proxyServerIp}"\ LogSeverity.Info);
             }
 
             // Step 6 — Apply routing table entries ────────────────────────────
-            StatusText = "Applying routes...";
+            StatusText = "\pplying routes..."\
             var routingMode = (RoutingMode)(int)SelectedMode; // ProxyMode values are intentionally identical to RoutingMode
             _routeManager = new RouteManager();
             _connectCts = new CancellationTokenSource();
@@ -252,12 +249,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             if (!routesOk)
             {
-                StatusText = "Failed to apply routes. SSStap must run as Administrator.";
-                Log($"ApplyRoutesAsync failed for mode={routingMode}.", LogSeverity.Error);
+                StatusText = "\ailed to apply routes. SSStap must run as Administrator."\
+                Log($"\pplyRoutesAsync failed for mode={routingMode}."\ LogSeverity.Error);
                 await TearDownAsync();
                 return;
             }
-            Log($"Routes applied (mode={routingMode}).", LogSeverity.Info);
+            Log($"\outes applied (mode={routingMode})."\ LogSeverity.Info);
 
             // Step 7 — Build SOCKS5 client ────────────────────────────────────
             var socks5 = new Socks5Client(
@@ -267,7 +264,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 string.IsNullOrWhiteSpace(proxy.Password) ? null : proxy.Password);
 
             // Step 8 — Start tunnel engine ────────────────────────────────────
-            StatusText = $"Starting tunnel to {proxy.DisplayName}...";
+            StatusText = $"\tarting tunnel to {proxy.DisplayName}..."\
             var packetSource = new WintunPacketSource(session);
             _tunnelEngine = new TunnelEngine(packetSource, socks5, _routeManager, routingMode);
             _tunnelEngine.Start();
@@ -284,26 +281,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
             };
 
             IsConnected = true;
-            StatusText = $"Connected — {proxy.DisplayName}";
-            Log($"Tunnel running. Proxy: {proxy.Server}:{proxy.ServerPort}", LogSeverity.Info);
+            StatusText = $"\onnected — {proxy.DisplayName}"\
+            Log($"\unnel running. Proxy: {proxy.Server}:{proxy.ServerPort}"\ LogSeverity.Info);
             SaveConfig();
         }
         catch (DllNotFoundException ex)
         {
-            StatusText = $"wintun.dll not found: {ex.Message}";
-            Log($"DllNotFoundException: {ex.Message}", LogSeverity.Error);
+            StatusText = $"\intun.dll not found: {ex.Message}"\
+            Log($"\llNotFoundException: {ex.Message}"\ LogSeverity.Error);
             await TearDownAsync();
         }
         catch (EntryPointNotFoundException)
         {
-            StatusText = "wintun.dll is outdated — replace with amd64 build from https://www.wintun.net/";
-            Log("EntryPointNotFoundException: WintunGetAdapterLuid missing from wintun.dll.", LogSeverity.Error);
+            StatusText = "\intun.dll is outdated — replace with amd64 build from https://www.wintun.net/"\
+            Log("\ntryPointNotFoundException: WintunGetAdapterLuid missing from wintun.dll."\ LogSeverity.Error);
             await TearDownAsync();
         }
         catch (Exception ex)
         {
-            StatusText = $"Connect failed: {ex.Message}";
-            Log($"Unhandled connect exception: {ex}", LogSeverity.Error);
+            StatusText = $"\onnect failed: {ex.Message}"\
+            Log($"\nhandled connect exception: {ex}"\ LogSeverity.Error);
             await TearDownAsync();
         }
     }
@@ -313,8 +310,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         await TearDownAsync();
         IsConnected = false;
-        StatusText = "Disconnected";
-        Log("Disconnected.", LogSeverity.Info);
+        StatusText = "\isconnected"\
+        Log("\isconnected."\ LogSeverity.Info);
         SaveConfig();
     }
 
@@ -356,7 +353,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (proxy == null)
         {
-            StatusText = "Please select a proxy";
+            StatusText = "\lease select a proxy"\
             return;
         }
 
@@ -364,7 +361,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _testCts = new CancellationTokenSource();
         IsTestRunning = true;
         LogEntries.Clear();
-        StatusText = "Testing proxy...";
+        StatusText = "\esting proxy..."\
 
         var progress = new Progress<LogEntry>(e =>
             Application.Current?.Dispatcher.Invoke(() => LogEntries.Add(e)));
@@ -376,14 +373,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 string.IsNullOrWhiteSpace(proxy.Username) ? null : proxy.Username,
                 string.IsNullOrWhiteSpace(proxy.Password) ? null : proxy.Password,
                 progress, _testCts.Token);
-            StatusText = "Proxy test complete";
+            StatusText = "\roxy test complete"\
         }
-        catch (OperationCanceledException) { StatusText = "Proxy test cancelled"; }
+        catch (OperationCanceledException) { StatusText = "\roxy test cancelled"\ }
         catch (Exception ex)
         {
-            StatusText = $"Proxy test failed: {ex.Message}";
+            StatusText = $"\roxy test failed: {ex.Message}"\
             Application.Current?.Dispatcher.Invoke(() =>
-                LogEntries.Add(new LogEntry(DateTime.Now.ToString("HH:mm:ss"), $"[-] {ex.Message}", LogSeverity.Error)));
+                LogEntries.Add(new LogEntry(DateTime.Now.ToString("\H:mm:ss"\, $"\-] {ex.Message}"\ LogSeverity.Error)));
         }
         finally
         {
@@ -405,7 +402,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void Log(string message, LogSeverity severity)
     {
         Application.Current?.Dispatcher.Invoke(() =>
-            LogEntries.Add(new LogEntry(DateTime.Now.ToString("HH:mm:ss"), message, severity)));
+            LogEntries.Add(new LogEntry(DateTime.Now.ToString("\H:mm:ss"\, message, severity)));
     }
 
     public void Dispose()
